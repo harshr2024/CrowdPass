@@ -1,0 +1,2 @@
+-- Baseline migration. Intentionally empty: it establishes Flyway's schema history
+-- so that the first real schema change (Phase 1) starts at V2.
