@@ -4,12 +4,12 @@ import java.time.Clock;
 import java.util.Optional;
 import java.util.UUID;
 
-import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.crowdpass.common.DatabaseConstraints;
 import com.crowdpass.user.Role;
 import com.crowdpass.user.User;
 import com.crowdpass.user.UserRepository;
@@ -49,7 +49,7 @@ public class AuthService {
 			userRepository.saveAndFlush(user);
 		}
 		catch (DataIntegrityViolationException ex) {
-			if (violates(ex, EMAIL_UNIQUE_CONSTRAINT)) {
+			if (DatabaseConstraints.violatedConstraint(ex).filter(EMAIL_UNIQUE_CONSTRAINT::equals).isPresent()) {
 				throw new EmailAlreadyRegisteredException();
 			}
 			throw ex;
@@ -69,15 +69,6 @@ public class AuthService {
 		}
 		String token = jwtTokenService.issueAccessToken(user.get().getId(), user.get().getRole());
 		return new LoginResponse(token, "Bearer", jwtTokenService.accessTokenTtl().toSeconds());
-	}
-
-	private static boolean violates(Throwable ex, String constraintName) {
-		for (Throwable cause = ex; cause != null; cause = cause.getCause()) {
-			if (cause instanceof ConstraintViolationException violation) {
-				return constraintName.equals(violation.getConstraintName());
-			}
-		}
-		return false;
 	}
 
 }
