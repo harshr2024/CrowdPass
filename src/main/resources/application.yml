@@ -17,6 +17,18 @@ spring:
     enabled: true
     locations: classpath:db/migration
 
+  jackson:
+    deserialization:
+      # Reject unsupported request fields (e.g. "role") instead of silently ignoring them.
+      fail-on-unknown-properties: true
+
+crowdpass:
+  jwt:
+    # Base64-encoded, at least 256 bits. Never committed; startup fails if absent outside local dev.
+    secret: ${CROWDPASS_JWT_SECRET:}
+    issuer: crowdpass-api
+    access-token-ttl: 60m
+
 logging:
   pattern:
     level: "%5p [requestId=%X{requestId:-}]"

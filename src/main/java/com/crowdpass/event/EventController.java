@@ -15,6 +15,7 @@ import jakarta.validation.constraints.Min;
 @RequestMapping("/api/events")
 public class EventController {
 
+	static final int DEFAULT_PAGE_SIZE = 20;
 	static final int MAX_PAGE_SIZE = 100;
 
 	private final EventService eventService;
@@ -24,9 +25,9 @@ public class EventController {
 	}
 
 	@GetMapping
-	public EventPageResponse listEvents(
+	public PageResponse<EventResponse> listEvents(
 			@RequestParam(name = "page", defaultValue = "0") @Min(0) int page,
-			@RequestParam(name = "size", defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) int size) {
+			@RequestParam(name = "size", defaultValue = "" + DEFAULT_PAGE_SIZE) @Min(1) @Max(MAX_PAGE_SIZE) int size) {
 		return eventService.listPublishedEvents(page, size);
 	}
 

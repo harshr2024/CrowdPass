@@ -6,6 +6,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,6 +14,9 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+
+import com.crowdpass.auth.JwtTokenService;
+import com.crowdpass.user.Role;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -33,6 +37,9 @@ class HealthCheckIntegrationTest {
 
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
+
+	@Autowired
+	private JwtTokenService jwtTokenService;
 
 	@Test
 	void healthIsUpAndReportsPostgresConnection() throws Exception {
@@ -56,14 +63,24 @@ class HealthCheckIntegrationTest {
 	}
 
 	@Test
-	void sensitiveActuatorEndpointsAreNotExposed() throws Exception {
-		assertThat(get("/actuator/env").statusCode()).isEqualTo(404);
-		assertThat(get("/actuator/beans").statusCode()).isEqualTo(404);
+	void sensitiveActuatorEndpointsRequireAuthenticationAndAreNotExposed() throws Exception {
+		String adminToken = jwtTokenService.issueAccessToken(UUID.randomUUID(), Role.ADMIN);
+
+		assertThat(get("/actuator/env", null).statusCode()).isEqualTo(401);
+		assertThat(get("/actuator/env", adminToken).statusCode()).isEqualTo(404);
+		assertThat(get("/actuator/beans", adminToken).statusCode()).isEqualTo(404);
 	}
 
 	private HttpResponse<String> get(String path) throws Exception {
-		HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path)).GET().build();
-		return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+		return get(path, null);
+	}
+
+	private HttpResponse<String> get(String path, String bearerToken) throws Exception {
+		HttpRequest.Builder request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path)).GET();
+		if (bearerToken != null) {
+			request.header("Authorization", "Bearer " + bearerToken);
+		}
+		return httpClient.send(request.build(), HttpResponse.BodyHandlers.ofString());
 	}
 
 }

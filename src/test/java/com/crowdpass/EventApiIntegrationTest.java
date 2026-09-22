@@ -32,6 +32,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.crowdpass.auth.JwtTokenService;
+import com.crowdpass.user.Role;
 import com.crowdpass.user.User;
 
 import jakarta.persistence.EntityManagerFactory;
@@ -59,6 +61,9 @@ class EventApiIntegrationTest {
 
 	@Autowired
 	private EntityManagerFactory entityManagerFactory;
+
+	@Autowired
+	private JwtTokenService jwtTokenService;
 
 	private UUID organizerId;
 
@@ -227,11 +232,19 @@ class EventApiIntegrationTest {
 	}
 
 	@Test
-	void unknownRouteAndUnsupportedMethodUseStandardFormat() throws Exception {
-		HttpResponse<String> unknown = get("/api/does-not-exist");
-		HttpResponse<String> post = httpClient.send(HttpRequest.newBuilder(uri("/api/events"))
-				.POST(HttpRequest.BodyPublishers.ofString("{}")).header("Content-Type", "application/json").build(),
-				HttpResponse.BodyHandlers.ofString());
+	void unknownRouteAndUnsupportedMethodRequireAuthenticationFirst() throws Exception {
+		assertThat(get("/api/does-not-exist").statusCode()).isEqualTo(401);
+		assertThat(send(HttpRequest.newBuilder(uri("/api/events")).POST(HttpRequest.BodyPublishers.ofString("{}"))
+				.header("Content-Type", "application/json")).statusCode()).isEqualTo(401);
+	}
+
+	@Test
+	void unknownRouteAndUnsupportedMethodUseStandardFormatWhenAuthenticated() throws Exception {
+		HttpResponse<String> unknown = send(HttpRequest.newBuilder(uri("/api/does-not-exist")).GET()
+				.header("Authorization", "Bearer " + userToken()));
+		HttpResponse<String> post = send(HttpRequest.newBuilder(uri("/api/events"))
+				.POST(HttpRequest.BodyPublishers.ofString("{}")).header("Content-Type", "application/json")
+				.header("Authorization", "Bearer " + userToken()));
 
 		assertThat(unknown.statusCode()).isEqualTo(404);
 		assertThat(jsonMapper.readTree(unknown.body()).path("code").asString()).isEqualTo("NOT_FOUND");
@@ -240,8 +253,18 @@ class EventApiIntegrationTest {
 	}
 
 	@Test
+	void publicEndpointRejectsInvalidBearerToken() throws Exception {
+		HttpResponse<String> response = send(HttpRequest.newBuilder(uri("/api/events")).GET()
+				.header("Authorization", "Bearer not.a.jwt"));
+
+		assertThat(response.statusCode()).isEqualTo(401);
+		assertThat(jsonMapper.readTree(response.body()).path("code").asString()).isEqualTo("UNAUTHENTICATED");
+	}
+
+	@Test
 	void unexpectedErrorsDoNotLeakInternalDetails() throws Exception {
-		HttpResponse<String> response = get(FailingEndpointConfiguration.PATH);
+		HttpResponse<String> response = send(HttpRequest.newBuilder(uri(FailingEndpointConfiguration.PATH)).GET()
+				.header("Authorization", "Bearer " + userToken()));
 
 		assertThat(response.statusCode()).isEqualTo(500);
 		JsonNode body = jsonMapper.readTree(response.body());
@@ -313,6 +336,14 @@ class EventApiIntegrationTest {
 	private HttpResponse<String> get(String path, String requestId) throws Exception {
 		return httpClient.send(HttpRequest.newBuilder(uri(path)).header("X-Request-Id", requestId).GET().build(),
 				HttpResponse.BodyHandlers.ofString());
+	}
+
+	private HttpResponse<String> send(HttpRequest.Builder request) throws Exception {
+		return httpClient.send(request.build(), HttpResponse.BodyHandlers.ofString());
+	}
+
+	private String userToken() {
+		return jwtTokenService.issueAccessToken(organizerId, Role.USER);
 	}
 
 	private URI uri(String path) {

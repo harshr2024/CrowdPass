@@ -1,0 +1,4 @@
+crowdpass:
+  jwt:
+    # Each test context generates its own random signing key; no secret is committed.
+    ephemeral-secret-allowed: true

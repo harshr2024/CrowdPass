@@ -2,3 +2,9 @@ management:
   endpoint:
     health:
       show-details: always
+
+crowdpass:
+  jwt:
+    # Local development only: generate a throwaway signing key when CROWDPASS_JWT_SECRET is unset.
+    # Tokens become invalid on restart.
+    ephemeral-secret-allowed: true

@@ -1,5 +1,6 @@
 package com.crowdpass.exception;
 
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 
 /**
@@ -24,6 +25,11 @@ public abstract class ApiException extends RuntimeException {
 
 	public String getCode() {
 		return code;
+	}
+
+	/** Additional response headers, e.g. an authentication challenge. */
+	public HttpHeaders getHeaders() {
+		return HttpHeaders.EMPTY;
 	}
 
 }
