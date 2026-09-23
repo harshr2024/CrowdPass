@@ -8,15 +8,14 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.crowdpass.common.PageResponse;
+
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 
 @RestController
 @RequestMapping("/api/events")
 public class EventController {
-
-	static final int DEFAULT_PAGE_SIZE = 20;
-	static final int MAX_PAGE_SIZE = 100;
 
 	private final EventService eventService;
 
@@ -27,7 +26,8 @@ public class EventController {
 	@GetMapping
 	public PageResponse<EventResponse> listEvents(
 			@RequestParam(name = "page", defaultValue = "0") @Min(0) int page,
-			@RequestParam(name = "size", defaultValue = "" + DEFAULT_PAGE_SIZE) @Min(1) @Max(MAX_PAGE_SIZE) int size) {
+			@RequestParam(name = "size", defaultValue = "" + PageResponse.DEFAULT_SIZE) @Min(1)
+			@Max(PageResponse.MAX_SIZE) int size) {
 		return eventService.listPublishedEvents(page, size);
 	}
 

@@ -16,6 +16,7 @@ import com.crowdpass.event.EventRepository;
 import com.crowdpass.event.EventStatus;
 import com.crowdpass.event.LockedEvent;
 import com.crowdpass.exception.ApiException;
+import com.crowdpass.outbox.OutboxWriter;
 import com.crowdpass.reservation.ReservationExceptions.AlreadyReserved;
 import com.crowdpass.reservation.ReservationExceptions.CancellationClosed;
 import com.crowdpass.reservation.ReservationExceptions.EventFull;
@@ -61,15 +62,17 @@ public class ReservationService {
 	private final WaitlistEntryRepository waitlistEntryRepository;
 	private final EventRepository eventRepository;
 	private final UserRepository userRepository;
+	private final OutboxWriter outboxWriter;
 	private final Clock clock;
 
 	public ReservationService(ReservationRepository reservationRepository,
 			WaitlistEntryRepository waitlistEntryRepository, EventRepository eventRepository,
-			UserRepository userRepository, Clock clock) {
+			UserRepository userRepository, OutboxWriter outboxWriter, Clock clock) {
 		this.reservationRepository = reservationRepository;
 		this.waitlistEntryRepository = waitlistEntryRepository;
 		this.eventRepository = eventRepository;
 		this.userRepository = userRepository;
+		this.outboxWriter = outboxWriter;
 		this.clock = clock;
 	}
 
@@ -141,6 +144,10 @@ public class ReservationService {
 	 * Hands one freed seat to the head of the waitlist, or releases it if nobody is waiting (or the
 	 * event is no longer published). The caller must hold the event row lock. Any inconsistency
 	 * fails the whole transaction rather than skipping a waiting user.
+	 *
+	 * <p>A successful promotion also appends one {@code WAITLIST_PROMOTED} outbox row in this same
+	 * transaction. The notification itself is delivered later; this method never calls SQS. If
+	 * nobody is waiting, no outbox row is written.
 	 */
 	private void fillFreedSeatOrRelease(UUID eventId, LockedEvent event, Instant now) {
 		Optional<WaitlistEntry> head = event.isPublished()
@@ -166,6 +173,9 @@ public class ReservationService {
 		if (waitlistEntryRepository.markPromoted(entry.getId(), promoted.getId(), now) != 1) {
 			throw new IllegalStateException("Waitlist entry " + entry.getId() + " was not WAITING during promotion");
 		}
+		outboxWriter.append(WaitlistPromotedEvent.TYPE, WaitlistPromotedEvent.VERSION,
+				WaitlistPromotedEvent.AGGREGATE_TYPE, entry.getId(),
+				new WaitlistPromotedEvent(entry.getUser().getId(), eventId, promoted.getId(), entry.getId()), now);
 	}
 
 	/**

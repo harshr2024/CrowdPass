@@ -11,3 +11,13 @@ crowdpass:
   rate-limit:
     # Local development only: generate a throwaway HMAC key when CROWDPASS_RATE_LIMIT_SECRET is unset.
     ephemeral-secret-allowed: true
+  messaging:
+    # ElasticMQ from Compose. These credentials are dummies for the local emulator only.
+    sqs:
+      endpoint: http://localhost:${ELASTICMQ_PORT:9324}
+      access-key-id: local
+      secret-access-key: local
+    publisher:
+      enabled: true
+    consumer:
+      enabled: true

@@ -83,7 +83,7 @@ class AuthIntegrationTest {
 
 	@BeforeEach
 	void resetData() {
-		jdbcTemplate.execute("truncate waitlist_entries, reservations, events, users");
+		jdbcTemplate.execute("truncate notifications, outbox_events, waitlist_entries, reservations, events, users");
 	}
 
 	// ---- Registration ----

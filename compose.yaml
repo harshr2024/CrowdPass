@@ -27,5 +27,19 @@ services:
       timeout: 3s
       retries: 10
 
+  # Local SQS substitute only. The JVM image, not elasticmq-native.
+  # Queue URLs follow the request host so the published port is reachable from the app.
+  elasticmq:
+    image: softwaremill/elasticmq:1.7.1
+    ports:
+      - "${ELASTICMQ_PORT:-9324}:9324"
+    volumes:
+      - ./docker/elasticmq/elasticmq.conf:/opt/elasticmq.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/9324'"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
 volumes:
   crowdpass-pgdata:

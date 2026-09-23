@@ -63,6 +63,25 @@ crowdpass:
         requests: 30
         window: 1m
 
+  # Standard SQS. Disabled unless a profile (local) or deployment turns the switches on, so a
+  # process without queues does not poll. A blank endpoint uses the default AWS credential chain.
+  messaging:
+    sqs:
+      endpoint: ${CROWDPASS_SQS_ENDPOINT:}
+      region: ${CROWDPASS_SQS_REGION:us-east-1}
+      queue-name: ${CROWDPASS_SQS_QUEUE:crowdpass-notifications}
+      access-key-id: ${CROWDPASS_SQS_ACCESS_KEY_ID:}
+      secret-access-key: ${CROWDPASS_SQS_SECRET_ACCESS_KEY:}
+      api-call-timeout: 5s
+      api-call-attempt-timeout: 3s
+    publisher:
+      enabled: false
+      batch-size: 10
+    consumer:
+      enabled: false
+      wait-time: 20s
+      max-messages: 10
+
 logging:
   pattern:
     level: "%5p [requestId=%X{requestId:-}]"

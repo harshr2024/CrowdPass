@@ -15,3 +15,15 @@ crowdpass:
         requests: 1000000
       seat-mutation:
         requests: 1000000
+  messaging:
+    # Point at a closed port with dummy credentials so tests never touch AWS or the default
+    # credential chain. Messaging tests override the endpoint with ElasticMQ.
+    sqs:
+      endpoint: http://127.0.0.1:9
+      access-key-id: test
+      secret-access-key: test
+    publisher:
+      enabled: false
+    consumer:
+      enabled: false
+      wait-time: 0s

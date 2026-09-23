@@ -26,7 +26,7 @@ public final class ReservationTestData {
 	}
 
 	public void reset() {
-		jdbc.execute("truncate waitlist_entries, reservations, events, users");
+		jdbc.execute("truncate notifications, outbox_events, waitlist_entries, reservations, events, users");
 	}
 
 	public List<UUID> insertUsers(int count, String role) {
@@ -149,7 +149,28 @@ public final class ReservationTestData {
 		if (fifoBreaks > 0) {
 			violations.add("FIFO: a PROMOTED entry is behind a still-WAITING entry");
 		}
+		long promotedWithoutOneEvent = count("""
+				select count(*) from waitlist_entries w
+				where w.event_id = ? and w.status = 'PROMOTED'
+				  and (
+				    select count(*) from outbox_events o
+				    where o.aggregate_type = 'waitlist_entry'
+				      and o.aggregate_id = w.id
+				      and o.event_type = 'WAITLIST_PROMOTED'
+				      and o.data->>'userId' = w.user_id::text
+				      and o.data->>'eventId' = w.event_id::text
+				      and o.data->>'reservationId' = w.reservation_id::text
+				      and o.data->>'waitlistEntryId' = w.id::text
+				  ) <> 1
+				""", eventId);
+		if (promotedWithoutOneEvent > 0) {
+			violations.add(promotedWithoutOneEvent + " PROMOTED entr(ies) without exactly one WAITLIST_PROMOTED outbox event");
+		}
 		return violations;
+	}
+
+	public long outboxEventCount() {
+		return jdbc.queryForObject("select count(*) from outbox_events", Long.class);
 	}
 
 	private long count(String sql, UUID eventId) {
