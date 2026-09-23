@@ -2,7 +2,11 @@
 
 High-concurrency event reservation and virtual queue platform.
 
-> Status: Phase 0 (project skeleton). No domain features yet.
+> Status: Phase 6 baseline. CrowdPass includes a Spring Boot and PostgreSQL foundation,
+> authentication and authorization, concurrency-safe reservations, transactional FIFO waitlist
+> promotion, Redis distributed rate limiting, a transactional outbox, Standard SQS-compatible
+> asynchronous notifications, and idempotent notification consumption. The current baseline has
+> 419 passing tests.
 
 ## Local Setup
 
