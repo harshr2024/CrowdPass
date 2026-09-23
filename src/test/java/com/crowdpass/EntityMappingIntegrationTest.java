@@ -66,7 +66,7 @@ class EntityMappingIntegrationTest {
 		assertThat(environment.getProperty("spring.jpa.hibernate.ddl-auto")).isEqualTo("validate");
 		assertThat(jdbcTemplate.queryForObject(
 				"select max(version::int) from flyway_schema_history where success", Integer.class))
-				.isEqualTo(2);
+				.isEqualTo(3);
 	}
 
 	@Test

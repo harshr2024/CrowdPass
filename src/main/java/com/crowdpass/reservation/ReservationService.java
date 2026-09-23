@@ -14,6 +14,7 @@ import com.crowdpass.event.Event;
 import com.crowdpass.event.EventNotFoundException;
 import com.crowdpass.event.EventRepository;
 import com.crowdpass.event.EventStatus;
+import com.crowdpass.event.LockedEvent;
 import com.crowdpass.exception.ApiException;
 import com.crowdpass.reservation.ReservationExceptions.AlreadyReserved;
 import com.crowdpass.reservation.ReservationExceptions.CancellationClosed;
@@ -21,25 +22,33 @@ import com.crowdpass.reservation.ReservationExceptions.EventFull;
 import com.crowdpass.reservation.ReservationExceptions.RegistrationClosed;
 import com.crowdpass.reservation.ReservationExceptions.RegistrationNotOpen;
 import com.crowdpass.reservation.ReservationExceptions.ReservationNotFound;
+import com.crowdpass.reservation.waitlist.WaitlistEntry;
+import com.crowdpass.reservation.waitlist.WaitlistEntryRepository;
+import com.crowdpass.reservation.waitlist.WaitlistStatus;
 import com.crowdpass.user.AuthenticatedUserNotFoundException;
 import com.crowdpass.user.UserRepository;
 
 /**
- * Owns the capacity invariant: {@code events.reserved_count} equals the number of CONFIRMED
- * reservations and never exceeds capacity, and a user holds at most one CONFIRMED reservation per
- * event.
- *
- * <p>Rules every reservation-changing transaction must follow (including future waitlist promotion):
+ * Owns the seat invariants for each event:
  * <ul>
- * <li><b>Event row first.</b> Lock the event row (via {@link EventRepository#tryAcquireSeat} or
- * {@link EventRepository#lockForReservationChange}) before modifying any of its reservations.
- * Taking locks in a different order can deadlock against concurrent reserve and cancel.</li>
+ * <li>{@code reserved_count} equals the number of CONFIRMED reservations and never exceeds capacity;</li>
+ * <li>a user holds at most one CONFIRMED reservation and at most one WAITING entry, never both;</li>
+ * <li>while any entry is WAITING, the event is full, so a freed seat always goes to the head of the
+ * waitlist rather than to a new direct reservation.</li>
+ * </ul>
+ *
+ * <p>Rules every seat- or waitlist-changing transaction must follow:
+ * <ul>
+ * <li><b>Event row first.</b> Lock the event row ({@link EventRepository#tryAcquireSeat} or
+ * {@link EventRepository#lockForSeatChange}) before modifying any reservation or waitlist entry of
+ * that event. A different order can deadlock, and waitlist ordering depends on joins being
+ * serialized by this lock.</li>
+ * <li><b>Freed seats go to the waitlist first.</b> Any operation that frees a seat, including a future
+ * organizer capacity increase, must call {@link #fillFreedSeatOrRelease} while holding the lock.</li>
  * <li>Change {@code reserved_count} only through the conditional UPDATE methods, in the same
- * transaction as the reservation row change. Never base a decision on
- * {@code Event.getReservedCount()}, which is a stale snapshot.</li>
- * <li>Keep PostgreSQL's default READ COMMITTED isolation; the conditional UPDATE relies on its
- * re-evaluation of the WHERE clause after a lock wait.</li>
- * <li>Capture the current time once per operation and use it for every time-based decision.</li>
+ * transaction as the row changes. Never base a decision on {@code Event.getReservedCount()}.</li>
+ * <li>Keep PostgreSQL's default READ COMMITTED isolation.</li>
+ * <li>Capture the current time once per operation.</li>
  * </ul>
  */
 @Service
@@ -49,13 +58,16 @@ public class ReservationService {
 	private static final String RESERVATION_USER_FOREIGN_KEY = "fk_reservations_user";
 
 	private final ReservationRepository reservationRepository;
+	private final WaitlistEntryRepository waitlistEntryRepository;
 	private final EventRepository eventRepository;
 	private final UserRepository userRepository;
 	private final Clock clock;
 
-	public ReservationService(ReservationRepository reservationRepository, EventRepository eventRepository,
+	public ReservationService(ReservationRepository reservationRepository,
+			WaitlistEntryRepository waitlistEntryRepository, EventRepository eventRepository,
 			UserRepository userRepository, Clock clock) {
 		this.reservationRepository = reservationRepository;
+		this.waitlistEntryRepository = waitlistEntryRepository;
 		this.eventRepository = eventRepository;
 		this.userRepository = userRepository;
 		this.clock = clock;
@@ -93,8 +105,9 @@ public class ReservationService {
 	}
 
 	/**
-	 * Cancels the caller's reservation and releases its seat exactly once. Cancelling an already
-	 * cancelled reservation returns its current state without releasing another seat.
+	 * Cancels the caller's reservation. In the same transaction, the freed seat goes to the head of
+	 * the waitlist (count unchanged) or, if nobody is waiting, is released (count decremented once).
+	 * Cancelling an already cancelled reservation returns its current state and changes nothing.
 	 */
 	@Transactional
 	public ReservationResponse cancel(UUID reservationId, UUID userId) {
@@ -104,14 +117,13 @@ public class ReservationService {
 				.orElseThrow(ReservationNotFound::new);
 		UUID eventId = owned.getEvent().getId();
 
-		Instant startsAt = eventRepository.lockForReservationChange(eventId);
+		LockedEvent event = eventRepository.lockForSeatChange(eventId)
+				.orElseThrow(() -> new IllegalStateException("Reservation " + reservationId + " has no event"));
 		if (reservationRepository.cancelIfConfirmed(reservationId, now) == 1) {
-			if (!now.isBefore(startsAt)) {
+			if (!now.isBefore(event.getStartsAt())) {
 				throw new CancellationClosed();
 			}
-			if (eventRepository.releaseSeat(eventId) != 1) {
-				throw new IllegalStateException("reserved_count drift detected for event " + eventId);
-			}
+			fillFreedSeatOrRelease(eventId, event, now);
 		}
 		return reservationRepository.findById(reservationId)
 				.map(ReservationResponse::from)
@@ -123,6 +135,37 @@ public class ReservationService {
 		return reservationRepository.findByIdAndUserId(reservationId, userId)
 				.map(ReservationResponse::from)
 				.orElseThrow(ReservationNotFound::new);
+	}
+
+	/**
+	 * Hands one freed seat to the head of the waitlist, or releases it if nobody is waiting (or the
+	 * event is no longer published). The caller must hold the event row lock. Any inconsistency
+	 * fails the whole transaction rather than skipping a waiting user.
+	 */
+	private void fillFreedSeatOrRelease(UUID eventId, LockedEvent event, Instant now) {
+		Optional<WaitlistEntry> head = event.isPublished()
+				? waitlistEntryRepository.findFirstByEventIdAndStatusOrderByQueueSeqAsc(eventId, WaitlistStatus.WAITING)
+				: Optional.empty();
+		if (head.isEmpty()) {
+			if (eventRepository.releaseSeat(eventId) != 1) {
+				throw new IllegalStateException("reserved_count drift detected for event " + eventId);
+			}
+			return;
+		}
+
+		WaitlistEntry entry = head.get();
+		Reservation promoted = new Reservation(eventRepository.getReferenceById(eventId),
+				userRepository.getReferenceById(entry.getUser().getId()), now);
+		try {
+			reservationRepository.saveAndFlush(promoted);
+		}
+		catch (DataIntegrityViolationException ex) {
+			throw new IllegalStateException("Cannot promote waitlist entry " + entry.getId()
+					+ ": the waiting user already holds a reservation for event " + eventId, ex);
+		}
+		if (waitlistEntryRepository.markPromoted(entry.getId(), promoted.getId(), now) != 1) {
+			throw new IllegalStateException("Waitlist entry " + entry.getId() + " was not WAITING during promotion");
+		}
 	}
 
 	/**

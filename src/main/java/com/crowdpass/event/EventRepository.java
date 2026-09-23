@@ -52,10 +52,17 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
 	int releaseSeat(@Param("eventId") UUID eventId);
 
 	/**
-	 * Locks the event row for a reservation state change and returns its start time. Callers must
-	 * take this lock before modifying any reservation of the event (event-row-first lock order).
+	 * Locks the event row for a seat or waitlist change. Callers must take this lock before
+	 * modifying any reservation or waitlist entry of the event (event-row-first lock order).
 	 */
-	@Query(nativeQuery = true, value = "SELECT starts_at FROM events WHERE id = :eventId FOR UPDATE")
-	Instant lockForReservationChange(@Param("eventId") UUID eventId);
+	@Query(nativeQuery = true, value = """
+			SELECT status, capacity, reserved_count AS reservedCount,
+			       registration_open_at AS registrationOpenAt, registration_close_at AS registrationCloseAt,
+			       starts_at AS startsAt
+			FROM   events
+			WHERE  id = :eventId
+			FOR UPDATE
+			""")
+	Optional<LockedEvent> lockForSeatChange(@Param("eventId") UUID eventId);
 
 }
