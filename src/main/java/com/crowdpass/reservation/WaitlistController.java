@@ -12,21 +12,28 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.crowdpass.ratelimit.RateLimitPolicy;
+import com.crowdpass.ratelimit.RateLimiter;
+
 /** Entries are addressed by the caller's identity, so every operation is owner-scoped. */
 @RestController
 @RequestMapping("/api/events/{eventId}/waitlist")
 public class WaitlistController {
 
 	private final WaitlistService waitlistService;
+	private final RateLimiter rateLimiter;
 
-	public WaitlistController(WaitlistService waitlistService) {
+	public WaitlistController(WaitlistService waitlistService, RateLimiter rateLimiter) {
 		this.waitlistService = waitlistService;
+		this.rateLimiter = rateLimiter;
 	}
 
 	@PostMapping
 	public ResponseEntity<WaitlistEntryResponse> join(@PathVariable("eventId") UUID eventId,
 			@AuthenticationPrincipal Jwt jwt) {
-		WaitlistEntryResponse entry = waitlistService.join(eventId, userId(jwt));
+		UUID userId = userId(jwt);
+		rateLimiter.checkUser(RateLimitPolicy.SEAT_MUTATION, userId);
+		WaitlistEntryResponse entry = waitlistService.join(eventId, userId);
 		return ResponseEntity.created(URI.create("/api/events/" + eventId + "/waitlist/me")).body(entry);
 	}
 
@@ -37,7 +44,9 @@ public class WaitlistController {
 
 	@PostMapping("/me/leave")
 	public WaitlistEntryResponse leave(@PathVariable("eventId") UUID eventId, @AuthenticationPrincipal Jwt jwt) {
-		return waitlistService.leave(eventId, userId(jwt));
+		UUID userId = userId(jwt);
+		rateLimiter.checkUser(RateLimitPolicy.SEAT_MUTATION, userId);
+		return waitlistService.leave(eventId, userId);
 	}
 
 	private static UUID userId(Jwt jwt) {

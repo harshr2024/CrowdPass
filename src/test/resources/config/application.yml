@@ -2,3 +2,16 @@ crowdpass:
   jwt:
     # Each test context generates its own random signing key; no secret is committed.
     ephemeral-secret-allowed: true
+  rate-limit:
+    ephemeral-secret-allowed: true
+    # Effectively unlimited so tests that are not about rate limiting are unaffected; rate-limit
+    # tests set their own low limits.
+    policies:
+      login-ip:
+        requests: 1000000
+      login-account:
+        requests: 1000000
+      register-ip:
+        requests: 1000000
+      seat-mutation:
+        requests: 1000000

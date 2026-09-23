@@ -11,19 +11,26 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.crowdpass.ratelimit.RateLimitPolicy;
+import com.crowdpass.ratelimit.RateLimiter;
+
 @RestController
 public class ReservationController {
 
 	private final ReservationService reservationService;
+	private final RateLimiter rateLimiter;
 
-	public ReservationController(ReservationService reservationService) {
+	public ReservationController(ReservationService reservationService, RateLimiter rateLimiter) {
 		this.reservationService = reservationService;
+		this.rateLimiter = rateLimiter;
 	}
 
 	@PostMapping("/api/events/{eventId}/reservations")
 	public ResponseEntity<ReservationResponse> reserve(@PathVariable("eventId") UUID eventId,
 			@AuthenticationPrincipal Jwt jwt) {
-		ReservationResponse reservation = reservationService.reserve(eventId, userId(jwt));
+		UUID userId = userId(jwt);
+		rateLimiter.checkUser(RateLimitPolicy.SEAT_MUTATION, userId);
+		ReservationResponse reservation = reservationService.reserve(eventId, userId);
 		return ResponseEntity.created(URI.create("/api/reservations/" + reservation.id())).body(reservation);
 	}
 
@@ -36,7 +43,9 @@ public class ReservationController {
 	@PostMapping("/api/reservations/{reservationId}/cancel")
 	public ReservationResponse cancel(@PathVariable("reservationId") UUID reservationId,
 			@AuthenticationPrincipal Jwt jwt) {
-		return reservationService.cancel(reservationId, userId(jwt));
+		UUID userId = userId(jwt);
+		rateLimiter.checkUser(RateLimitPolicy.SEAT_MUTATION, userId);
+		return reservationService.cancel(reservationId, userId);
 	}
 
 	private static UUID userId(Jwt jwt) {

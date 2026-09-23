@@ -6,6 +6,11 @@ spring:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/crowdpass}
     username: ${DB_USERNAME:crowdpass}
     password: ${DB_PASSWORD:crowdpass}
+    hikari:
+      data-source-properties:
+        # PostgreSQL JDBC driver: omit the server's DETAIL (e.g. "Key (email)=(...) already exists")
+        # from exception messages and logs. The primary message and constraint name are unaffected.
+        logServerErrorDetail: false
 
   jpa:
     # Flyway owns the schema; Hibernate only checks that entities match it.
@@ -22,12 +27,41 @@ spring:
       # Reject unsupported request fields (e.g. "role") instead of silently ignoring them.
       fail-on-unknown-properties: true
 
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      # Redis is used only for rate limiting, which fails open; keep waits short.
+      timeout: 200ms
+      connect-timeout: 1s
+
+server:
+  # Never trust X-Forwarded-* headers until trusted proxies are configured for AWS (Phase 10).
+  forward-headers-strategy: none
+
 crowdpass:
   jwt:
     # Base64-encoded, at least 256 bits. Never committed; startup fails if absent outside local dev.
     secret: ${CROWDPASS_JWT_SECRET:}
     issuer: crowdpass-api
     access-token-ttl: 60m
+
+  rate-limit:
+    # Base64-encoded, at least 256 bits; keys the HMAC of IPs and emails in Redis keys.
+    secret: ${CROWDPASS_RATE_LIMIT_SECRET:}
+    policies:
+      login-ip:
+        requests: 60
+        window: 1m
+      login-account:
+        requests: 10
+        window: 15m
+      register-ip:
+        requests: 60
+        window: 10m
+      seat-mutation:
+        requests: 30
+        window: 1m
 
 logging:
   pattern:
@@ -41,3 +75,8 @@ management:
   endpoint:
     health:
       show-details: never
+  health:
+    redis:
+      # Redis is optional for correctness (rate limiting fails open), so its outage must not
+      # mark the application unhealthy. Outages are visible through rate-limit metrics and logs.
+      enabled: false

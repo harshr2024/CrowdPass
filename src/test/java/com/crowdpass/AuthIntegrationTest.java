@@ -1,6 +1,7 @@
 package com.crowdpass;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -22,14 +23,20 @@ import javax.crypto.spec.SecretKeySpec;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.postgresql.util.PSQLException;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Import;
+import org.springframework.core.NestedExceptionUtils;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
@@ -48,6 +55,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@ExtendWith(OutputCaptureExtension.class)
 class AuthIntegrationTest {
 
 	private static final String VALID_PASSWORD = "correct horse battery staple";
@@ -113,6 +121,45 @@ class AuthIntegrationTest {
 		assertThat(error.path("code").asString()).isEqualTo("VALIDATION_FAILED");
 		assertThat(error.path("message").asString()).isEqualTo("Unknown field '" + field + "'.");
 		assertThat(jdbcTemplate.queryForObject("select count(*) from users", Integer.class)).isZero();
+	}
+
+	@Test
+	void duplicateRegistrationStillMapsByConstraintNameWithoutLoggingTheEmail(CapturedOutput output)
+			throws Exception {
+		String email = "privacy-regression-" + UUID.randomUUID() + "@example.com";
+		assertThat(post("/api/auth/register", registration(email)).statusCode()).isEqualTo(201);
+
+		HttpResponse<String> duplicate = post("/api/auth/register", registration(email));
+
+		assertThat(duplicate.statusCode()).isEqualTo(409);
+		assertThat(json(duplicate).path("code").asString()).isEqualTo("EMAIL_ALREADY_REGISTERED");
+		assertThat(json(duplicate).path("message").asString()).isEqualTo("An account with this email already exists.");
+		assertThat(output.getAll())
+				.as("the SQL error is still logged, identified by its constraint name")
+				.contains("uq_users_email")
+				.as("but without PostgreSQL's DETAIL, which contains the raw email")
+				.doesNotContain(email)
+				.doesNotContain("Key (email)");
+	}
+
+	@Test
+	void driverStillExposesConstraintNameWithDetailOmittedFromMessage() {
+		String email = "driver-check-" + UUID.randomUUID() + "@example.com";
+		String insert = """
+				insert into users (id, email, password_hash, display_name, role, created_at, updated_at)
+				values (?, ?, 'x', 'User', 'USER', now(), now())
+				""";
+		jdbcTemplate.update(insert, UUID.randomUUID(), email);
+
+		assertThatThrownBy(() -> jdbcTemplate.update(insert, UUID.randomUUID(), email))
+				.isInstanceOf(DataIntegrityViolationException.class)
+				.satisfies(ex -> {
+					PSQLException psql = (PSQLException) NestedExceptionUtils.getMostSpecificCause(ex);
+					assertThat(psql.getServerErrorMessage().getConstraint()).isEqualTo("uq_users_email");
+					assertThat(psql.getSQLState()).isEqualTo("23505");
+					assertThat(psql.getMessage()).contains("uq_users_email").doesNotContain(email);
+					assertThat(ex.getMessage()).doesNotContain(email);
+				});
 	}
 
 	@Test

@@ -1,17 +1,13 @@
 package com.crowdpass.auth;
 
-import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Duration;
-import java.util.Base64;
 import java.util.Objects;
 import java.util.UUID;
 
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -26,6 +22,7 @@ import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 
+import com.crowdpass.common.SecretKeys;
 import com.crowdpass.user.Role;
 
 @Configuration(proxyBeanMethods = false)
@@ -34,7 +31,6 @@ public class JwtConfiguration {
 
 	static final String ROLE_CLAIM = "role";
 
-	private static final Logger log = LoggerFactory.getLogger(JwtConfiguration.class);
 	private static final int MIN_SECRET_BYTES = 32;
 	private static final Duration CLOCK_SKEW = Duration.ofSeconds(60);
 
@@ -66,33 +62,9 @@ public class JwtConfiguration {
 	}
 
 	static SecretKey resolveSigningKey(String base64Secret, boolean ephemeralSecretAllowed) {
-		if (base64Secret == null || base64Secret.isBlank()) {
-			if (!ephemeralSecretAllowed) {
-				throw new IllegalStateException(
-						"crowdpass.jwt.secret (CROWDPASS_JWT_SECRET) must be set to a base64-encoded key of at least "
-								+ MIN_SECRET_BYTES + " bytes");
-			}
-			log.warn("No JWT secret configured; generated an ephemeral signing key. Tokens will not survive a restart.");
-			byte[] random = new byte[MIN_SECRET_BYTES];
-			new SecureRandom().nextBytes(random);
-			return hmacKey(random);
-		}
-		byte[] decoded;
-		try {
-			decoded = Base64.getDecoder().decode(base64Secret.strip());
-		}
-		catch (IllegalArgumentException ex) {
-			throw new IllegalStateException("crowdpass.jwt.secret is not valid base64");
-		}
-		if (decoded.length < MIN_SECRET_BYTES) {
-			throw new IllegalStateException(
-					"crowdpass.jwt.secret must decode to at least " + MIN_SECRET_BYTES + " bytes for HS256");
-		}
-		return hmacKey(decoded);
-	}
-
-	private static SecretKey hmacKey(byte[] bytes) {
-		return new SecretKeySpec(bytes, "HmacSHA256");
+		byte[] key = SecretKeys.resolve("crowdpass.jwt.secret", "CROWDPASS_JWT_SECRET", base64Secret,
+				ephemeralSecretAllowed, MIN_SECRET_BYTES);
+		return new SecretKeySpec(key, "HmacSHA256");
 	}
 
 	private static boolean isUuid(String value) {

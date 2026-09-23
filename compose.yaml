@@ -15,5 +15,17 @@ services:
       timeout: 3s
       retries: 10
 
+  # Rate-limit counters only. State is deliberately ephemeral: no volume, persistence disabled.
+  redis:
+    image: redis:8.10.2-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
 volumes:
   crowdpass-pgdata:
