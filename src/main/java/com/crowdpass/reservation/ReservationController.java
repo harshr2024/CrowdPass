@@ -1,6 +1,7 @@
 package com.crowdpass.reservation;
 
 import java.net.URI;
+import java.util.List;
 import java.util.UUID;
 
 import org.springframework.http.ResponseEntity;
@@ -9,8 +10,13 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.crowdpass.idempotency.IdempotencyKeys;
+import com.crowdpass.idempotency.IdempotentReservationExecutor;
+import com.crowdpass.idempotency.IdempotentResponse;
+import com.crowdpass.idempotency.ReservationRequestFingerprint;
 import com.crowdpass.ratelimit.RateLimitPolicy;
 import com.crowdpass.ratelimit.RateLimiter;
 
@@ -19,16 +25,32 @@ public class ReservationController {
 
 	private final ReservationService reservationService;
 	private final RateLimiter rateLimiter;
+	private final IdempotencyKeys idempotencyKeys;
+	private final ReservationRequestFingerprint fingerprint;
+	private final IdempotentReservationExecutor idempotentExecutor;
 
-	public ReservationController(ReservationService reservationService, RateLimiter rateLimiter) {
+	public ReservationController(ReservationService reservationService, RateLimiter rateLimiter,
+			IdempotencyKeys idempotencyKeys, ReservationRequestFingerprint fingerprint,
+			IdempotentReservationExecutor idempotentExecutor) {
 		this.reservationService = reservationService;
 		this.rateLimiter = rateLimiter;
+		this.idempotencyKeys = idempotencyKeys;
+		this.fingerprint = fingerprint;
+		this.idempotentExecutor = idempotentExecutor;
 	}
 
 	@PostMapping("/api/events/{eventId}/reservations")
-	public ResponseEntity<ReservationResponse> reserve(@PathVariable("eventId") UUID eventId,
-			@AuthenticationPrincipal Jwt jwt) {
+	public ResponseEntity<?> reserve(@PathVariable("eventId") UUID eventId, @AuthenticationPrincipal Jwt jwt,
+			@RequestHeader(name = "Idempotency-Key", required = false) List<String> idempotencyKeyValues) {
 		UUID userId = userId(jwt);
+		var keyHash = idempotencyKeys.validateAndHash(idempotencyKeyValues);
+		if (keyHash.isPresent()) {
+			IdempotentResponse response = idempotentExecutor.reserve(eventId, userId, keyHash.get(),
+					fingerprint.create(eventId));
+			return ResponseEntity.status(response.status())
+					.location(URI.create(response.location()))
+					.body(response.body());
+		}
 		rateLimiter.checkUser(RateLimitPolicy.SEAT_MUTATION, userId);
 		ReservationResponse reservation = reservationService.reserve(eventId, userId);
 		return ResponseEntity.created(URI.create("/api/reservations/" + reservation.id())).body(reservation);

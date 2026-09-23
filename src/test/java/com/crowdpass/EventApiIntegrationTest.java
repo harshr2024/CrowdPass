@@ -69,7 +69,8 @@ class EventApiIntegrationTest {
 
 	@BeforeEach
 	void resetData() {
-		jdbcTemplate.execute("truncate notifications, outbox_events, waitlist_entries, reservations, events, users");
+		jdbcTemplate.execute(
+				"truncate idempotency_records, notifications, outbox_events, waitlist_entries, reservations, events, users");
 		organizerId = UUID.randomUUID();
 		jdbcTemplate.update("""
 				insert into users (id, email, password_hash, display_name, role, created_at, updated_at)

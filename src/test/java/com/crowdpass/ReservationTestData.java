@@ -26,7 +26,7 @@ public final class ReservationTestData {
 	}
 
 	public void reset() {
-		jdbc.execute("truncate notifications, outbox_events, waitlist_entries, reservations, events, users");
+		jdbc.execute("truncate idempotency_records, notifications, outbox_events, waitlist_entries, reservations, events, users");
 	}
 
 	public List<UUID> insertUsers(int count, String role) {

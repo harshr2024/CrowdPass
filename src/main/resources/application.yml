@@ -63,6 +63,14 @@ crowdpass:
         requests: 30
         window: 1m
 
+  idempotency:
+    # Completed records remain authoritative until cleanup physically removes them, so the
+    # effective guarantee is at least this retention period.
+    retention: 24h
+    cleanup:
+      fixed-delay: 1h
+      batch-size: 1000
+
   # Standard SQS. Disabled unless a profile (local) or deployment turns the switches on, so a
   # process without queues does not poll. A blank endpoint uses the default AWS credential chain.
   messaging:
