@@ -54,6 +54,18 @@ class HealthCheckIntegrationTest {
 	}
 
 	@Test
+	void anonymousProbesSucceedWithoutExposingProtectedApplicationEndpoints() throws Exception {
+		HttpResponse<String> liveness = get("/livez");
+		HttpResponse<String> readiness = get("/readyz");
+
+		assertThat(liveness.statusCode()).isEqualTo(200);
+		assertThat(jsonMapper.readTree(liveness.body()).path("status").asString()).isEqualTo("UP");
+		assertThat(readiness.statusCode()).isEqualTo(200);
+		assertThat(jsonMapper.readTree(readiness.body()).path("status").asString()).isEqualTo("UP");
+		assertThat(get("/api/users/me").statusCode()).isEqualTo(401);
+	}
+
+	@Test
 	void flywayAppliedBaselineMigration() {
 		Integer appliedBaseline = jdbcTemplate.queryForObject(
 				"select count(*) from flyway_schema_history where version = '1' and success",

@@ -41,5 +41,39 @@ services:
       timeout: 3s
       retries: 10
 
+  app:
+    profiles: ["app"]
+    build:
+      context: .
+      args:
+        APP_VERSION: ${APP_VERSION:-local}
+        VCS_REVISION: ${VCS_REVISION:-unknown}
+    image: crowdpass-api:local
+    environment:
+      SPRING_PROFILES_ACTIVE: local-container
+      DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-crowdpass}
+      DB_USERNAME: ${POSTGRES_USER:-crowdpass}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-crowdpass}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      CROWDPASS_SQS_ENDPOINT: http://elasticmq:9324
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      elasticmq:
+        condition: service_started
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 40s
+
 volumes:
   crowdpass-pgdata:

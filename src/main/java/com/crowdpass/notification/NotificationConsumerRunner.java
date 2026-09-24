@@ -18,7 +18,8 @@ class NotificationConsumerRunner implements SmartLifecycle {
 
 	private final NotificationConsumer consumer;
 	private volatile boolean running;
-	private Thread thread;
+	private volatile Thread thread;
+	private volatile Runnable stoppedCallback;
 
 	NotificationConsumerRunner(NotificationConsumer consumer) {
 		this.consumer = consumer;
@@ -32,10 +33,19 @@ class NotificationConsumerRunner implements SmartLifecycle {
 
 	@Override
 	public void stop() {
+		stop(() -> { });
+	}
+
+	@Override
+	public void stop(Runnable callback) {
 		running = false;
-		if (thread != null) {
-			thread.interrupt();
+		Thread pollingThread = thread;
+		if (pollingThread == null || !pollingThread.isAlive()) {
+			callback.run();
+			return;
 		}
+		stoppedCallback = callback;
+		pollingThread.interrupt();
 	}
 
 	@Override
@@ -44,22 +54,32 @@ class NotificationConsumerRunner implements SmartLifecycle {
 	}
 
 	private void loop() {
-		while (running) {
-			try {
-				consumer.pollOnce();
-			}
-			catch (RuntimeException ex) {
-				if (!running) {
-					return;
-				}
-				log.warn("Notification polling failed; retrying in {} (error={})", ERROR_BACKOFF,
-						ex.getClass().getSimpleName());
+		try {
+			while (running) {
 				try {
-					Thread.sleep(ERROR_BACKOFF);
+					consumer.pollOnce();
 				}
-				catch (InterruptedException interrupted) {
-					return;
+				catch (RuntimeException ex) {
+					if (!running) {
+						return;
+					}
+					log.warn("Notification polling failed; retrying in {} (error={})", ERROR_BACKOFF,
+							ex.getClass().getSimpleName());
+					try {
+						Thread.sleep(ERROR_BACKOFF);
+					}
+					catch (InterruptedException interrupted) {
+						Thread.currentThread().interrupt();
+						return;
+					}
 				}
+			}
+		}
+		finally {
+			running = false;
+			Runnable callback = stoppedCallback;
+			if (callback != null) {
+				callback.run();
 			}
 		}
 	}

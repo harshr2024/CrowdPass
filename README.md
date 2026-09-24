@@ -2,12 +2,13 @@
 
 High-concurrency event reservation and virtual queue platform.
 
-> Status: Phase 8 baseline. CrowdPass includes a Spring Boot and PostgreSQL foundation,
+> Status: Phase 9 baseline. CrowdPass includes a Spring Boot and PostgreSQL foundation,
 > authentication and authorization, concurrency-safe reservations, transactional FIFO waitlist
 > promotion, Redis distributed rate limiting, a transactional outbox, Standard SQS-compatible
 > asynchronous notifications, idempotent notification consumption, PostgreSQL-backed HTTP request
-> idempotency, and SSE notification invalidation through ephemeral Redis Pub/Sub. The current
-> baseline has 455 passing tests.
+> idempotency, SSE notification invalidation through ephemeral Redis Pub/Sub, and a hardened
+> non-root production container with liveness/readiness probes and graceful shutdown. The current
+> baseline has 457 passing tests.
 
 ## Local Setup
 
@@ -15,14 +16,15 @@ High-concurrency event reservation and virtual queue platform.
 
 - JDK 21 (Temurin). If multiple JDKs are installed, point Maven at 21:
   `export JAVA_HOME=$(/usr/libexec/java_home -v 21)`
-- Docker (Docker Desktop on macOS), used for local PostgreSQL and for Testcontainers.
+- Docker (Docker Desktop on macOS), used for local infrastructure, the application image, and
+  Testcontainers.
 
 Maven does not need to be installed; use the wrapper `./mvnw`.
 
 ### Run
 
 ```bash
-docker compose up -d                              # PostgreSQL 17 on localhost:5432
+docker compose up -d postgres redis elasticmq
 SPRING_PROFILES_ACTIVE=local ./mvnw spring-boot:run
 curl localhost:8080/actuator/health
 ```
@@ -39,10 +41,25 @@ Configuration comes from environment variables with local defaults:
 
 To change the Compose database credentials or port, copy `.env.example` to `.env`.
 
+### Containerized application
+
+```bash
+docker build -t crowdpass-api:local .
+docker compose --profile app up --build
+curl localhost:8080/livez
+curl localhost:8080/readyz
+```
+
+The `app` profile runs the full stack using the `local-container` Spring profile and Compose DNS
+names. The application container runs as UID/GID `10001:10001` with a read-only root filesystem,
+all Linux capabilities dropped, and only a bounded `/tmp` tmpfs writable. Default application
+configuration remains production-style: database configuration and durable secrets must be supplied
+through the environment.
+
 ### Test
 
 ```bash
-./mvnw test
+./mvnw clean test
 ```
 
 Integration tests start their own disposable PostgreSQL 17 container via Testcontainers; they do not use the Compose database.

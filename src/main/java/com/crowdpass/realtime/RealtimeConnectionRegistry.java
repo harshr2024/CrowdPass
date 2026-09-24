@@ -19,6 +19,8 @@ import java.util.function.LongFunction;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.event.ContextClosedEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -209,6 +211,16 @@ public class RealtimeConnectionRegistry implements DisposableBean {
 
 	@Override
 	public void destroy() {
+		closeAllForShutdown();
+	}
+
+	/** Close streams before the web server waits for in-flight requests during graceful shutdown. */
+	@EventListener(ContextClosedEvent.class)
+	void onContextClosed() {
+		closeAllForShutdown();
+	}
+
+	private void closeAllForShutdown() {
 		for (Connection connection : snapshotAll()) {
 			close(connection, "shutdown");
 		}

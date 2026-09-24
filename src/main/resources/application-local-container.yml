@@ -1,0 +1,29 @@
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://postgres:5432/crowdpass}
+    username: ${DB_USERNAME:crowdpass}
+    password: ${DB_PASSWORD:crowdpass}
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+
+management:
+  endpoint:
+    health:
+      show-details: always
+
+crowdpass:
+  jwt:
+    # Full-stack local Compose only. Tokens become invalid when the container restarts.
+    ephemeral-secret-allowed: true
+  rate-limit:
+    ephemeral-secret-allowed: true
+  messaging:
+    sqs:
+      endpoint: ${CROWDPASS_SQS_ENDPOINT:http://elasticmq:9324}
+      access-key-id: local
+      secret-access-key: local
+    publisher:
+      enabled: true
+    consumer:
+      enabled: true

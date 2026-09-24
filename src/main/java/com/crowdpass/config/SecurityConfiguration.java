@@ -40,6 +40,7 @@ public class SecurityConfiguration {
 				.authorizeHttpRequests(requests -> requests
 						.requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login").permitAll()
 						.requestMatchers(HttpMethod.GET, "/api/events", "/api/events/*").permitAll()
+						.requestMatchers(HttpMethod.GET, "/livez", "/readyz").permitAll()
 						.requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**", "/actuator/info")
 						.permitAll()
 						.requestMatchers("/error").permitAll()

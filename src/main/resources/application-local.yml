@@ -1,3 +1,12 @@
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/crowdpass}
+    username: ${DB_USERNAME:crowdpass}
+    password: ${DB_PASSWORD:crowdpass}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+
 management:
   endpoint:
     health:

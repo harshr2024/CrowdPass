@@ -118,6 +118,18 @@ class RealtimeConnectionRegistryTest {
 	}
 
 	@Test
+	void applicationContextShutdownClosesEverySseConnection() {
+		List<FakeEmitter> emitters = new ArrayList<>();
+		RealtimeConnectionRegistry registry = registry(Runnable::run, properties(3, 1000), emitters);
+		registry.open(UUID.randomUUID(), NOW.plusSeconds(60), null);
+		registry.open(UUID.randomUUID(), NOW.plusSeconds(60), null);
+
+		registry.onContextClosed();
+
+		assertThat(registry.activeConnectionCount()).isZero();
+	}
+
+	@Test
 	void saturatedExecutorDropsSignalWithoutClosingConnection() {
 		List<FakeEmitter> emitters = new ArrayList<>();
 		SimpleMeterRegistry meters = new SimpleMeterRegistry();
