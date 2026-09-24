@@ -1,0 +1,41 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AuthenticateToEcr",
+      "Effect": "Allow",
+      "Action": "ecr:GetAuthorizationToken",
+      "Resource": "*"
+    },
+    {
+      "Sid": "PullOnlyCrowdPassImage",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:BatchGetImage"
+      ],
+      "Resource": "arn:aws:ecr:us-west-2:__ACCOUNT_ID__:repository/crowdpass-api"
+    },
+    {
+      "Sid": "WriteOnlyCrowdPassLogs",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": "arn:aws:logs:us-west-2:__ACCOUNT_ID__:log-group:/crowdpass/temporary-demo:log-stream:*"
+    },
+    {
+      "Sid": "InjectOnlyCrowdPassParameters",
+      "Effect": "Allow",
+      "Action": "ssm:GetParameters",
+      "Resource": [
+        "arn:aws:ssm:us-west-2:__ACCOUNT_ID__:parameter/crowdpass/temporary-demo/db/username",
+        "arn:aws:ssm:us-west-2:__ACCOUNT_ID__:parameter/crowdpass/temporary-demo/db/password",
+        "arn:aws:ssm:us-west-2:__ACCOUNT_ID__:parameter/crowdpass/temporary-demo/jwt-secret",
+        "arn:aws:ssm:us-west-2:__ACCOUNT_ID__:parameter/crowdpass/temporary-demo/rate-limit-secret"
+      ]
+    }
+  ]
+}

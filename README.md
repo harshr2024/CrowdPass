@@ -8,7 +8,8 @@ High-concurrency event reservation and virtual queue platform.
 > asynchronous notifications, idempotent notification consumption, PostgreSQL-backed HTTP request
 > idempotency, SSE notification invalidation through ephemeral Redis Pub/Sub, and a hardened
 > non-root production container with liveness/readiness probes and graceful shutdown. The current
-> baseline has 457 passing tests.
+> baseline has 457 passing tests. Local, reviewable configuration for a temporary private AWS
+> demonstration is prepared under `deploy/aws`; CrowdPass has not yet been deployed to AWS.
 
 ## Local Setup
 

@@ -1,0 +1,7 @@
+{
+  "VisibilityTimeout": "30",
+  "MessageRetentionPeriod": "345600",
+  "ReceiveMessageWaitTimeSeconds": "20",
+  "SqsManagedSseEnabled": "true",
+  "RedrivePolicy": "{\"deadLetterTargetArn\":\"__DLQ_ARN__\",\"maxReceiveCount\":\"5\"}"
+}

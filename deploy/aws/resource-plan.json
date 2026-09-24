@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Phase 10C temporary CrowdPass AWS demonstration; this file is a local plan, not an AWS deployment document",
+  "region": "us-west-2",
+  "names": {
+    "prefix": "crowdpass-temporary-demo",
+    "ecrRepository": "crowdpass-api",
+    "ecsCluster": "crowdpass-temporary-demo",
+    "ecsService": "crowdpass-temporary-demo",
+    "ecsTaskFamily": "crowdpass-temporary-demo",
+    "cloudWatchLogGroup": "/crowdpass/temporary-demo",
+    "rdsInstance": "crowdpass-temporary-demo",
+    "database": "crowdpass",
+    "notificationQueue": "crowdpass-temporary-demo-notifications",
+    "notificationDlq": "crowdpass-temporary-demo-notifications-dlq"
+  },
+  "tags": {
+    "Project": "CrowdPass",
+    "Phase": "10C",
+    "Environment": "temporary-demo",
+    "ExpiresAt": "__EXPIRY_UTC__"
+  },
+  "network": {
+    "vpcCidr": "10.42.0.0/16",
+    "availabilityZones": [
+      "__PRIMARY_AZ__",
+      "__SECONDARY_AZ__"
+    ],
+    "subnets": [
+      {
+        "name": "crowdpass-temporary-demo-app-public-a",
+        "cidr": "10.42.0.0/24",
+        "availabilityZone": "__PRIMARY_AZ__",
+        "route": "0.0.0.0/0 -> Internet Gateway",
+        "assignPublicIpv4ToTask": true
+      },
+      {
+        "name": "crowdpass-temporary-demo-db-private-a",
+        "cidr": "10.42.10.0/24",
+        "availabilityZone": "__PRIMARY_AZ__",
+        "route": "local only"
+      },
+      {
+        "name": "crowdpass-temporary-demo-db-private-b",
+        "cidr": "10.42.11.0/24",
+        "availabilityZone": "__SECONDARY_AZ__",
+        "route": "local only"
+      }
+    ],
+    "natGateways": 0,
+    "interfaceVpcEndpoints": 0,
+    "applicationLoadBalancers": 0,
+    "taskSecurityGroup": {
+      "inbound": [],
+      "outbound": [
+        "TCP 443 to 0.0.0.0/0 for AWS public endpoints and image pulls",
+        "TCP 5432 to the database security group",
+        "DNS to the VPC resolver"
+      ]
+    },
+    "databaseSecurityGroup": {
+      "inbound": [
+        "TCP 5432 from the task security group only"
+      ],
+      "outbound": []
+    }
+  },
+  "ecs": {
+    "launchType": "FARGATE",
+    "platformVersion": "1.4.0",
+    "desiredCount": 1,
+    "cpu": 512,
+    "memoryMiB": 2048,
+    "operatingSystemFamily": "LINUX",
+    "cpuArchitecture": "ARM64",
+    "assignPublicIp": true,
+    "enableExecuteCommand": true,
+    "publicIngress": false
+  },
+  "rds": {
+    "engine": "postgres",
+    "instanceClass": "db.t4g.micro",
+    "multiAZ": false,
+    "allocatedStorageGiB": 20,
+    "storageType": "gp3",
+    "storageEncrypted": true,
+    "publiclyAccessible": false,
+    "backupRetentionDays": 0,
+    "deletionProtection": false,
+    "deleteAutomatedBackupsOnTeardown": true,
+    "skipFinalSnapshotOnTeardown": true,
+    "dbSubnetCount": 2
+  },
+  "sqs": {
+    "type": "Standard",
+    "visibilityTimeoutSeconds": 30,
+    "receiveWaitSeconds": 20,
+    "maxReceiveCount": 5,
+    "mainRetentionSeconds": 345600,
+    "dlqRetentionSeconds": 1209600,
+    "encryption": "SQS-managed SSE"
+  },
+  "ssmParameters": [
+    "/crowdpass/temporary-demo/db/username",
+    "/crowdpass/temporary-demo/db/password",
+    "/crowdpass/temporary-demo/jwt-secret",
+    "/crowdpass/temporary-demo/rate-limit-secret"
+  ],
+  "logging": {
+    "driver": "awslogs",
+    "retentionDays": 7
+  }
+}
