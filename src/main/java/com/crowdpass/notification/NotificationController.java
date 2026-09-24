@@ -10,8 +10,14 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.http.CacheControl;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import com.crowdpass.common.PageResponse;
+import com.crowdpass.realtime.RealtimeConnectionRegistry;
 
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -22,9 +28,22 @@ import jakarta.validation.constraints.Min;
 public class NotificationController {
 
 	private final NotificationService notificationService;
+	private final RealtimeConnectionRegistry realtimeConnections;
 
-	public NotificationController(NotificationService notificationService) {
+	public NotificationController(NotificationService notificationService,
+			RealtimeConnectionRegistry realtimeConnections) {
 		this.notificationService = notificationService;
+		this.realtimeConnections = realtimeConnections;
+	}
+
+	@GetMapping(path = "/stream")
+	public ResponseEntity<SseEmitter> stream(@AuthenticationPrincipal Jwt jwt,
+			@RequestHeader(name = "Last-Event-ID", required = false) String lastEventId) {
+		SseEmitter emitter = realtimeConnections.open(userId(jwt), jwt.getExpiresAt(), lastEventId);
+		return ResponseEntity.ok()
+				.cacheControl(CacheControl.noStore())
+				.contentType(MediaType.TEXT_EVENT_STREAM)
+				.body(emitter);
 	}
 
 	@GetMapping

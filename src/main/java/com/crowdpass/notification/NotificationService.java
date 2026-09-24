@@ -6,6 +6,7 @@ import java.util.UUID;
 
 import org.hibernate.id.uuid.UuidVersion7Strategy;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -13,24 +14,32 @@ import org.springframework.transaction.annotation.Transactional;
 import com.crowdpass.common.PageResponse;
 import com.crowdpass.exception.ApiException;
 import com.crowdpass.reservation.WaitlistPromotedEvent;
+import com.crowdpass.realtime.NotificationCreated;
 
 @Service
 public class NotificationService {
 
 	private final NotificationRepository repository;
 	private final Clock clock;
+	private final ApplicationEventPublisher events;
 
-	NotificationService(NotificationRepository repository, Clock clock) {
+	NotificationService(NotificationRepository repository, Clock clock, ApplicationEventPublisher events) {
 		this.repository = repository;
 		this.clock = clock;
+		this.events = events;
 	}
 
 	/** Returns true if a notification was created, false if this source event was already recorded. */
 	@Transactional
 	public boolean recordWaitlistPromoted(UUID sourceEventId, Instant occurredAt, WaitlistPromotedEvent event) {
 		UUID id = UuidVersion7Strategy.INSTANCE.generateUuid(null);
-		return repository.insertIfAbsent(id, sourceEventId, event.userId(), NotificationType.WAITLIST_PROMOTED.name(),
-				event.eventId(), event.reservationId(), occurredAt, clock.instant()) == 1;
+		boolean created = repository.insertIfAbsent(id, sourceEventId, event.userId(),
+				NotificationType.WAITLIST_PROMOTED.name(), event.eventId(), event.reservationId(), occurredAt,
+				clock.instant()) == 1;
+		if (created) {
+			events.publishEvent(new NotificationCreated(event.userId(), id));
+		}
+		return created;
 	}
 
 	/** The caller's notifications, newest first. */

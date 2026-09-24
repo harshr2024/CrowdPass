@@ -31,7 +31,7 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
-      # Redis is used only for rate limiting, which fails open; keep waits short.
+      # Redis is optional abuse protection and realtime fan-out; keep waits short and fail open.
       timeout: 200ms
       connect-timeout: 1s
 
@@ -71,6 +71,17 @@ crowdpass:
       fixed-delay: 1h
       batch-size: 1000
 
+  realtime:
+    heartbeat: 20s
+    max-stream-lifetime: 10m
+    max-connections-per-user: 3
+    max-connections-per-instance: 1000
+    redis-recovery-interval: 5s
+    executor:
+      core-size: 4
+      max-size: 16
+      queue-capacity: 1000
+
   # Standard SQS. Disabled unless a profile (local) or deployment turns the switches on, so a
   # process without queues does not poll. A blank endpoint uses the default AWS credential chain.
   messaging:
@@ -104,6 +115,6 @@ management:
       show-details: never
   health:
     redis:
-      # Redis is optional for correctness (rate limiting fails open), so its outage must not
-      # mark the application unhealthy. Outages are visible through rate-limit metrics and logs.
+      # Redis is optional for correctness (rate limiting and realtime fan-out fail open), so its
+      # outage must not mark the application unhealthy. Outages remain visible in metrics/logs.
       enabled: false
