@@ -98,12 +98,18 @@ the same validated commit because GitHub job isolation would otherwise require t
 Docker image artifact. On the native ARM64 deployment runner, that rebuilt image is validated again
 and the exact local image is pushed; it is not rebuilt after validation.
 
-Phase 12 owns the cluster, service, roles, runtime configuration, and bootstrap task definition. It
-must configure the ECS deployment circuit breaker with rollback and avoid forcing the service back
-to an older task revision during later Terraform applies. CD reads the task definition currently
+Phase 12 owns the cluster, roles, runtime configuration, bootstrap task definition, and the service
+at desired count zero. No bootstrap task runs and the sentinel application image is deliberately
+nonexistent, so infrastructure creation is not represented as an application deployment. The
+service lifecycle ignores only the active task revision and desired count after CD takes ownership.
+CD reads the task definition currently
 bound to the service, verifies the approved ARM64/CPU/memory/container/role invariants, removes only
 AWS response metadata, and changes only the `crowdpass-api` image. The repository's Phase 10 task
 template remains historical deployment evidence rather than a second live renderer.
+
+Base runtime changes after a CD deployment require deliberate stack recreation and redeployment for
+this temporary architecture. Terraform must not roll a running service back to its bootstrap task
+definition, and CD must not provision or modify the underlying infrastructure.
 
 ## Deployment and rollback behavior
 
@@ -112,14 +118,19 @@ After all validation jobs pass, the future deployment:
 1. enters `aws-demo` and verifies every Phase 12 input;
 2. assumes the dedicated role through OIDC;
 3. confirms the exact ECR repository, ECS cluster, service, and task-definition family exist;
-4. builds and validates the exact native ARM64 image, then pushes `git-<full-sha>`;
+4. builds and validates the exact native ARM64 image, then checks immutable tag `git-<full-sha>`;
+   if absent it pushes the image, while if present it pulls and validates that existing image's OCI
+   revision against the same full SHA before reusing its digest;
 5. resolves ECR's digest and renders a new task revision from the service's current revision;
-6. registers that revision, updates the existing service, and waits for stability;
-7. verifies the service revision, running task image digest, and completed ECS rollout; and
+6. registers that revision, updates the existing service to desired count one, and waits for
+   stability;
+7. verifies the service revision, exactly one intended running task, its image digest, and the
+   completed ECS rollout; and
 8. reports the SHA, tag, digest, cluster/service, and task-definition revision.
 
 If the image push succeeds but registration or service update fails, the immutable image remains in
-ECR for diagnosis and no infrastructure is created. If registration succeeds before the update
+ECR for diagnosis. Rerunning the same Git SHA does not overwrite the immutable tag: it validates
+and reuses the existing digest. If registration succeeds before the update
 fails, the service remains on its previous revision. If rollout fails, the Phase 12 ECS circuit
 breaker owns automatic rollback; the workflow then fails because the service or digest does not
 match the requested revision. ECS retains the previous task-definition revision for recovery. No

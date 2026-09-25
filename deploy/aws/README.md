@@ -4,6 +4,11 @@ This directory records the reviewed package used for the approved Phase 10C temp
 deployment. The templates do not provision resources by themselves; the human-checkpointed
 runbooks were executed only after approval. The deployment was verified and then torn down.
 
+Going forward, `infra/terraform` is the authoritative infrastructure definition. The Phase 10
+templates and provisioning runbook are retained as historical evidence and an emergency manual
+reference, not as a second owner of Terraform-managed resources. The smoke test, evidence checklist,
+cost record, and survivor-audit guidance remain applicable to Phase 12 verification and teardown.
+
 ## Exercised architecture
 
 - Region: `us-west-2`.
@@ -54,9 +59,10 @@ inactive ECS control-plane metadata and AWS service-linked-role metadata may rem
   pushes.
 - `scripts/render-task-definition.sh`: local placeholder substitution; never calls AWS.
 - `scripts/validate-package.sh`: offline JSON and invariant validation.
-- `cd-contract.md`: gated GitHub OIDC deployment contract for future Phase 12 infrastructure and
-  Phase 11D execution; it does not provision or access AWS.
-- `runbooks/phase10c-provision.md`: approved provisioning order used for Phase 10C.
+- `cd-contract.md`: gated GitHub OIDC deployment contract for Terraform-created infrastructure and
+  future Phase 11D execution; it does not provision infrastructure itself.
+- `runbooks/phase10c-provision.md`: historical manual provisioning order used for Phase 10C; it is
+  not authoritative for new infrastructure.
 - `runbooks/smoke-test.md`: ECS Exec verification workflow used for the private smoke test.
 - `runbooks/evidence.md`: sanitized evidence checklist.
 - `runbooks/teardown.md`: dependency-ordered teardown checklist used after verification.

@@ -1,5 +1,10 @@
 # Phase 10C ordered teardown
 
+For Phase 12, `terraform destroy` is the authoritative teardown mechanism for managed resources.
+This historical checklist remains the post-destroy survivor audit and emergency fallback. Never
+manually delete an ambiguous resource merely to make Terraform succeed; reconcile it with state and
+the exact CrowdPass names/tags first.
+
 This runbook is prepared before provisioning. Run it the same day immediately after evidence
 capture. Record each completed item and do not treat a stopped RDS instance or desired-count-zero
 service as deleted.

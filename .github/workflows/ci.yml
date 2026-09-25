@@ -86,3 +86,42 @@ jobs:
         env:
           IMAGE_TAG: crowdpass-api:ci-${{ github.sha }}
         run: ./scripts/ci/validate-production-image.sh "$IMAGE_TAG" "$GITHUB_SHA"
+
+  terraform-validation:
+    name: Terraform validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Terraform 1.16.4
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.16.4
+          terraform_wrapper: false
+
+      - name: Initialize without a remote backend
+        working-directory: infra/terraform
+        run: terraform init -backend=false -input=false
+
+      - name: Validate Terraform formatting and configuration
+        run: |
+          terraform -chdir=infra/terraform fmt -check -recursive
+          terraform -chdir=infra/terraform validate
+
+      - name: Run plan-only Terraform contract tests
+        run: terraform -chdir=infra/terraform test
+
+      - name: Validate Terraform architecture invariants
+        run: |
+          ./scripts/ci/validate-terraform.sh
+          ./scripts/ci/test-terraform-invariants.sh
+
+      - name: Validate deployment workflow guardrails
+        run: ./scripts/ci/validate-aws-deploy-workflow.sh
+
+      - name: Validate repository privacy and credentials
+        run: ./scripts/ci/validate-repository-privacy.sh

@@ -222,7 +222,7 @@ jobs:
             '.failures == []
              and (.services | length) == 1
              and .services[0].status == "ACTIVE"
-             and .services[0].desiredCount > 0
+             and (.services[0].desiredCount == 0 or .services[0].desiredCount == 1)
              and .services[0].deploymentConfiguration.deploymentCircuitBreaker.enable == true
              and .services[0].deploymentConfiguration.deploymentCircuitBreaker.rollback == true' \
             "$RUNNER_TEMP/target-service.json" >/dev/null
@@ -258,21 +258,37 @@ jobs:
             .
           ./scripts/ci/validate-production-image.sh "$image" "$GITHUB_SHA"
 
-      - name: Push immutable image and resolve its digest
+      - name: Publish or reuse immutable image and resolve its digest
         id: image
         shell: bash
         run: |
           set -euo pipefail
           image="$ECR_REPOSITORY_URI:$IMAGE_TAG"
-          docker push "$image"
-          digest=$(aws ecr describe-images \
-            --repository-name "$ECR_REPOSITORY_NAME" \
-            --image-ids imageTag="$IMAGE_TAG" \
-            --query 'imageDetails[0].imageDigest' \
-            --output text)
+          lookup_error="$RUNNER_TEMP/image-lookup-error.txt"
+          if aws ecr describe-images \
+              --repository-name "$ECR_REPOSITORY_NAME" \
+              --image-ids imageTag="$IMAGE_TAG" \
+              --output json > "$RUNNER_TEMP/existing-image.json" 2> "$lookup_error"; then
+            digest=$(jq -r '.imageDetails[0].imageDigest' "$RUNNER_TEMP/existing-image.json")
+            docker pull "$image" >/dev/null
+            ./scripts/ci/validate-production-image.sh "$image" "$GITHUB_SHA"
+            publish_mode="reused"
+          elif grep -q 'ImageNotFoundException' "$lookup_error"; then
+            docker push "$image"
+            digest=$(aws ecr describe-images \
+              --repository-name "$ECR_REPOSITORY_NAME" \
+              --image-ids imageTag="$IMAGE_TAG" \
+              --query 'imageDetails[0].imageDigest' \
+              --output text)
+            publish_mode="pushed"
+          else
+            echo "Unable to determine whether the immutable image tag exists" >&2
+            exit 1
+          fi
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
           echo "image-reference=$ECR_REPOSITORY_URI@$digest" >> "$GITHUB_OUTPUT"
+          echo "publish-mode=$publish_mode" >> "$GITHUB_OUTPUT"
 
       - name: Render next task-definition revision from the live service revision
         shell: bash
@@ -311,6 +327,7 @@ jobs:
             --cluster "$ECS_CLUSTER_NAME" \
             --service "$ECS_SERVICE_NAME" \
             --task-definition "$task_definition" \
+            --desired-count 1 \
             --query 'service.taskDefinition' \
             --output text >/dev/null
           aws ecs wait services-stable \
@@ -336,7 +353,8 @@ jobs:
             '.failures == []
              and (.services | length) == 1
              and .services[0].taskDefinition == $task_definition
-             and .services[0].runningCount == .services[0].desiredCount
+             and .services[0].desiredCount == 1
+             and .services[0].runningCount == 1
              and ([.services[0].deployments[] | select(.status == "PRIMARY" and .rolloutState == "COMPLETED")] | length) == 1' \
             "$RUNNER_TEMP/service.json" >/dev/null
 
@@ -354,7 +372,7 @@ jobs:
             --service-name "$ECS_SERVICE_NAME" \
             --desired-status RUNNING \
             --output json > "$RUNNER_TEMP/running-tasks.json"
-          jq -e '.taskArns | length > 0' "$RUNNER_TEMP/running-tasks.json" >/dev/null
+          jq -e '.taskArns | length == 1' "$RUNNER_TEMP/running-tasks.json" >/dev/null
           mapfile -t task_arns < <(jq -r '.taskArns[]' "$RUNNER_TEMP/running-tasks.json")
           aws ecs describe-tasks \
             --cluster "$ECS_CLUSTER_NAME" \
@@ -370,6 +388,7 @@ jobs:
       - name: Report deployment identity
         env:
           IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          IMAGE_PUBLISH_MODE: ${{ steps.image.outputs.publish-mode }}
           TASK_REVISION: ${{ steps.deployment.outputs.revision }}
         run: |
           {
@@ -378,6 +397,7 @@ jobs:
             echo "- Git SHA: \`$GITHUB_SHA\`"
             echo "- Image tag: \`$IMAGE_TAG\`"
             echo "- Image digest: \`$IMAGE_DIGEST\`"
+            echo "- Immutable image: \`$IMAGE_PUBLISH_MODE\`"
             echo "- ECS cluster: \`$ECS_CLUSTER_NAME\`"
             echo "- ECS service: \`$ECS_SERVICE_NAME\`"
             echo "- Task-definition revision: \`$TASK_REVISION\`"

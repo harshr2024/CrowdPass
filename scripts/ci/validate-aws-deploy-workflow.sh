@@ -20,6 +20,16 @@ grep -q 'group: aws-demo-deploy' "$workflow"
 grep -q 'cancel-in-progress: false' "$workflow"
 grep -q 'needs:' "$workflow"
 grep -q 'audience: sts.amazonaws.com' "$workflow"
+grep -q 'ImageNotFoundException' "$workflow"
+grep -q 'docker pull "$image"' "$workflow"
+grep -q 'publish_mode="reused"' "$workflow"
+grep -q 'publish_mode="pushed"' "$workflow"
+grep -q -- '--desired-count 1' "$workflow"
+grep -q '.services\[0\].desiredCount == 0 or .services\[0\].desiredCount == 1' "$workflow"
+grep -q '.services\[0\].runningCount == 1' "$workflow"
+grep -q '.taskArns | length == 1' "$workflow"
+test "$(grep -c 'docker push "$image"' "$workflow")" -eq 1
+test "$(grep -c './scripts/ci/validate-production-image.sh "$image" "$GITHUB_SHA"' "$workflow")" -eq 2
 
 if grep -nE '^[[:space:]]*(push|pull_request|schedule):' "$workflow"; then
   printf 'deployment workflow contains a non-manual trigger\n' >&2
@@ -33,6 +43,11 @@ fi
 
 if grep -nE '(terraform|cloudformation|create-repository|create-cluster|create-service|create-role|create-open-id-connect-provider|create-db-instance|create-queue|delete-cluster|delete-service|delete-repository)' "$workflow"; then
   printf 'deployment workflow contains infrastructure-provisioning or teardown commands\n' >&2
+  exit 1
+fi
+
+if grep -nE '(put-image-tag-mutability|imageTagMutability == "MUTABLE")' "$workflow"; then
+  printf 'deployment workflow weakens immutable ECR tags\n' >&2
   exit 1
 fi
 
