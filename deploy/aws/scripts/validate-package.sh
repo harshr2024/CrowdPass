@@ -57,24 +57,29 @@ test "$(jq -r '[.Statement[] | select(.Sid == "InjectOnlyCrowdPassParameters") |
 test "$(jq -r '.Statement[0].Condition.StringEquals["aws:SourceAccount"]' "$trust_policy")" = "__ACCOUNT_ID__"
 test "$(jq -r '.Statement[0].Condition.ArnLike["aws:SourceArn"]' "$trust_policy")" = "arn:aws:ecs:us-west-2:__ACCOUNT_ID__:*"
 
-if rg -n --hidden --glob '!README.md' --glob '!runbooks/**' --glob '!**/validate-package.sh' \
-  '(AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|aws_secret_access_key|CROWDPASS_SQS_ACCESS_KEY_ID|CROWDPASS_SQS_SECRET_ACCESS_KEY)' \
-  "$aws_dir"; then
+if find "$aws_dir" -type f \
+  ! -name 'README.md' \
+  ! -path "$aws_dir/runbooks/*" \
+  ! -name 'validate-package.sh' \
+  -exec grep -IlE -e \
+    '(AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|aws_secret_access_key|CROWDPASS_SQS_ACCESS_KEY_ID|CROWDPASS_SQS_SECRET_ACCESS_KEY)' \
+    {} \; -print -quit | grep -q .; then
   printf 'possible static AWS credential material found\n' >&2
   exit 1
 fi
 
-if rg -n '"(hostPort|containerPort)"|CROWDPASS_SQS_ENDPOINT|elasticmq|elasticache' "$task"; then
+if grep -nE -e '"(hostPort|containerPort)"|CROWDPASS_SQS_ENDPOINT|elasticmq|elasticache' "$task"; then
   printf 'forbidden public-ingress, local-SQS, or excluded-service setting found\n' >&2
   exit 1
 fi
 
-if rg -n 'latest' "$task"; then
+if grep -n -e 'latest' "$task"; then
   printf 'unversioned container tag found\n' >&2
   exit 1
 fi
 
-if rg -n --pcre2 '(^|[^0-9-])[0-9]{12}([^0-9-]|$)' "$aws_dir"; then
+if find "$aws_dir" -type f \
+  -exec grep -IlE -e '(^|[^0-9-])[0-9]{12}([^0-9-]|$)' {} \; -print -quit | grep -q .; then
   printf 'possible hardcoded AWS account ID found\n' >&2
   exit 1
 fi
