@@ -4,7 +4,7 @@ set -eu
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 cd "$repo_root"
 
-exclude='!scripts/ci/validate-repository-privacy.sh'
+exclude=':(exclude)scripts/ci/validate-repository-privacy.sh'
 failed=0
 
 scan() {
@@ -12,11 +12,7 @@ scan() {
   pattern=$2
 
   set +e
-  rg -l -I --hidden \
-    --glob '!.git/**' \
-    --glob '!target/**' \
-    --glob "$exclude" \
-    --pcre2 -- "$pattern" .
+  git grep -I -l -E -e "$pattern" -- . "$exclude"
   status=$?
   set -e
 
@@ -34,11 +30,37 @@ scan() {
 }
 
 # Report filenames only so a real credential can never be echoed into CI logs.
-scan 'AWS access key' '(?:AKIA|ASIA)[A-Z0-9]{16}'
-scan 'private key' '-----BEGIN (?:[A-Z0-9]+ )?PRIVATE KEY-----'
-scan 'hardcoded AWS account identifier' 'arn:aws(?:-[a-z]+)?:[^:\s]+:[^:\s]*:[0-9]{12}:'
+scan 'AWS access key' '(AKIA|ASIA)[A-Z0-9]{16}'
+scan 'private key' '-----BEGIN ([A-Z0-9]+ )?PRIVATE KEY-----'
+scan 'hardcoded AWS account identifier' 'arn:aws(-[a-z]+)?:[^:[:space:]]+:[^:[:space:]]*:[0-9]{12}:'
 scan 'JWT bearer token' 'Bearer[[:space:]]+eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+'
-scan 'non-example email address' '(?i)[a-z0-9.!#$%&*+/=?^_`{|}~-]+@(?!example\.(?:com|invalid)\b)[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}'
+
+emails=$(mktemp)
+non_example_emails=$(mktemp)
+trap 'rm -f "$emails" "$non_example_emails"' EXIT HUP INT TERM
+
+set +e
+git grep -I -n -o -E \
+  -e '[a-zA-Z0-9.!#$%&*+/=?^_`{|}~-]+@[a-zA-Z0-9](\.?[a-zA-Z0-9-])*\.[a-zA-Z]{2,}' \
+  -- . "$exclude" >"$emails"
+email_status=$?
+set -e
+
+case "$email_status" in
+  0)
+    grep -Eiv '@example\.(com|invalid)$' "$emails" | cut -d: -f1 | sort -u >"$non_example_emails"
+    if [ -s "$non_example_emails" ]; then
+      cat "$non_example_emails"
+      printf 'possible non-example email address found in the files listed above\n' >&2
+      failed=1
+    fi
+    ;;
+  1) ;;
+  *)
+    printf 'privacy scan failed while checking for email addresses\n' >&2
+    exit "$email_status"
+    ;;
+esac
 
 if [ "$failed" -ne 0 ]; then
   exit 1
