@@ -344,10 +344,28 @@ jobs:
           EXPECTED_TASK_DEFINITION: ${{ steps.deployment.outputs.task-definition }}
         run: |
           set -euo pipefail
-          aws ecs describe-services \
-            --cluster "$ECS_CLUSTER_NAME" \
-            --services "$ECS_SERVICE_NAME" \
-            --output json > "$RUNNER_TEMP/service.json"
+          for attempt in $(seq 1 60); do
+            aws ecs describe-services \
+              --cluster "$ECS_CLUSTER_NAME" \
+              --services "$ECS_SERVICE_NAME" \
+              --output json > "$RUNNER_TEMP/service.json"
+            if jq -e \
+                '([.services[0].deployments[] | select(.status == "PRIMARY" and .rolloutState == "COMPLETED")] | length) == 1' \
+                "$RUNNER_TEMP/service.json" >/dev/null; then
+              break
+            fi
+            if jq -e \
+                '([.services[0].deployments[] | select(.status == "PRIMARY" and .rolloutState == "FAILED")] | length) == 1' \
+                "$RUNNER_TEMP/service.json" >/dev/null; then
+              echo "ECS primary deployment reported FAILED" >&2
+              exit 1
+            fi
+            if [[ "$attempt" -eq 60 ]]; then
+              echo "Timed out waiting for ECS primary deployment rollout completion" >&2
+              exit 1
+            fi
+            sleep 5
+          done
           jq -e \
             --arg task_definition "$EXPECTED_TASK_DEFINITION" \
             '.failures == []
