@@ -2,14 +2,15 @@
 
 High-concurrency event reservation and virtual queue platform.
 
-> Status: Phase 9 baseline. CrowdPass includes a Spring Boot and PostgreSQL foundation,
+> Status: Phase 10 baseline. CrowdPass includes a Spring Boot and PostgreSQL foundation,
 > authentication and authorization, concurrency-safe reservations, transactional FIFO waitlist
 > promotion, Redis distributed rate limiting, a transactional outbox, Standard SQS-compatible
 > asynchronous notifications, idempotent notification consumption, PostgreSQL-backed HTTP request
 > idempotency, SSE notification invalidation through ephemeral Redis Pub/Sub, and a hardened
 > non-root production container with liveness/readiness probes and graceful shutdown. The current
-> baseline has 457 passing tests. Local, reviewable configuration for a temporary private AWS
-> demonstration is prepared under `deploy/aws`; CrowdPass has not yet been deployed to AWS.
+> baseline has 457 passing tests. Phase 10 deployed and verified this architecture in a temporary,
+> private AWS environment in `us-west-2`, then fully removed the potentially billable
+> infrastructure. The reviewed deployment package and verification record are under `deploy/aws`.
 
 ## Local Setup
 

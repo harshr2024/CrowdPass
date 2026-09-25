@@ -1,10 +1,10 @@
 # CrowdPass temporary AWS deployment package
 
-This directory prepares the approved Phase 10C demonstration architecture. It contains local
-templates and human-checkpointed runbooks only. Nothing here provisions AWS resources, and Phase
-10B must not run the Phase 10C commands documented in the runbooks.
+This directory records the reviewed package used for the approved Phase 10C temporary AWS
+deployment. The templates do not provision resources by themselves; the human-checkpointed
+runbooks were executed only after approval. The deployment was verified and then torn down.
 
-## Selected architecture
+## Exercised architecture
 
 - Region: `us-west-2`.
 - One ECS service with desired count one on Fargate platform 1.4.0, Linux ARM64, 0.5 vCPU and 2 GiB
@@ -12,9 +12,9 @@ templates and human-checkpointed runbooks only. Nothing here provisions AWS reso
 - One CrowdPass container plus one non-essential, ephemeral Redis sidecar in the same task.
 - The task runs in a public subnet with an AWS-provided public IPv4 address for outbound access.
   Its security group has no inbound rules; port 8080 is never publicly mapped.
-- Single-AZ RDS PostgreSQL `db.t4g.micro`, encrypted 20 GiB gp3, private only. Its DB subnet group
-  contains two private subnets in different Availability Zones, while the instance itself remains
-  Single-AZ.
+- Single-AZ RDS PostgreSQL 17.11 on `db.t4g.micro`, encrypted 20 GiB gp3, private only. Its DB
+  subnet group contained two private subnets in different Availability Zones, while the instance
+  itself remained Single-AZ.
 - Real Standard SQS notification queue and DLQ, ECR, CloudWatch Logs, and four standard-tier SSM
   `SecureString` parameters.
 - No ALB, NAT Gateway, ElastiCache, public API endpoint, domain, Route 53, CloudFront, EFS, static AWS
@@ -25,6 +25,23 @@ If it exits, ECS leaves the CrowdPass container running; rate limiting and realt
 their existing short-timeout, fail-open behavior until the task is replaced. PostgreSQL/SQS
 correctness is unaffected, Redis health is excluded from application readiness, and a non-essential
 Redis health failure does not determine overall ECS task health.
+
+## Verified Phase 10C deployment
+
+CrowdPass ran in `us-west-2` for approximately 3 hours 50 minutes while the account remained on
+the AWS Free plan. Raw usage was estimated at approximately $0.19-$0.20 before credits. Flyway
+applied all five migrations through V5, and both `/livez` and `/readyz` reported `UP`.
+
+The private ECS Exec smoke test verified registration and login, a `CONFIRMED` reservation,
+same-reservation HTTP idempotency replay, FIFO `WAITING` position one, synchronous promotion on
+cancellation, transactional-outbox publication, real Standard SQS delivery, and one durable
+notification protected by PostgreSQL `source_event_id` idempotency. SSE delivered realtime events,
+the Redis sidecar returned `PONG`, and no application `ERROR` log event was observed. Messaging is
+at-least-once; this deployment does not claim exactly-once delivery.
+
+Teardown removed all potentially billable CrowdPass resources, including compute, database,
+snapshots/backups, queues, image storage, logs, parameters, and networking. Only non-billable
+inactive ECS control-plane metadata and AWS service-linked-role metadata may remain.
 
 ## Files
 
@@ -37,10 +54,10 @@ Redis health failure does not determine overall ECS task health.
   pushes.
 - `scripts/render-task-definition.sh`: local placeholder substitution; never calls AWS.
 - `scripts/validate-package.sh`: offline JSON and invariant validation.
-- `runbooks/phase10c-provision.md`: proposed order for a separately approved Phase 10C.
-- `runbooks/smoke-test.md`: ECS Exec verification workflow, prepared but not executed.
+- `runbooks/phase10c-provision.md`: approved provisioning order used for Phase 10C.
+- `runbooks/smoke-test.md`: ECS Exec verification workflow used for the private smoke test.
 - `runbooks/evidence.md`: sanitized evidence checklist.
-- `runbooks/teardown.md`: teardown prepared before provisioning.
+- `runbooks/teardown.md`: dependency-ordered teardown checklist used after verification.
 - `cost.md`: corrected raw estimates and assumptions.
 
 ## ECS Exec exception
@@ -90,7 +107,7 @@ deploy/aws/scripts/build-arm64-image.sh
 The second command builds a local image explicitly with `--platform linux/arm64 --load`. It does not
 authenticate to AWS and does not push the image.
 
-## Phase boundary
+## Phase 10 completion
 
-Phase 10C requires a new explicit approval. Its first AWS mutation must be the cost-guardrail step
-in `runbooks/phase10c-provision.md`, not application infrastructure.
+Phase 10C is complete. The temporary environment must not be recreated without a new explicit
+approval beginning with cost guardrails and the preflight in `runbooks/phase10c-provision.md`.
