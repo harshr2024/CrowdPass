@@ -54,6 +54,8 @@ inactive ECS control-plane metadata and AWS service-linked-role metadata may rem
   pushes.
 - `scripts/render-task-definition.sh`: local placeholder substitution; never calls AWS.
 - `scripts/validate-package.sh`: offline JSON and invariant validation.
+- `cd-contract.md`: gated GitHub OIDC deployment contract for future Phase 12 infrastructure and
+  Phase 11D execution; it does not provision or access AWS.
 - `runbooks/phase10c-provision.md`: approved provisioning order used for Phase 10C.
 - `runbooks/smoke-test.md`: ECS Exec verification workflow used for the private smoke test.
 - `runbooks/evidence.md`: sanitized evidence checklist.

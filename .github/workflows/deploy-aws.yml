@@ -1,0 +1,384 @@
+name: AWS Demo Deploy
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deployment-context:
+    name: Deployment context
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out exact selected commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Require an exact commit on main
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "AWS demo deployment is restricted to refs/heads/main" >&2
+            exit 1
+          fi
+          if [[ ! "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "GitHub did not select a full commit SHA" >&2
+            exit 1
+          fi
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          {
+            echo "### AWS demo deployment validation"
+            echo ""
+            echo "- Git SHA: \`$GITHUB_SHA\`"
+            echo "- Ref: \`$GITHUB_REF\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  jvm-validation:
+    name: Validate JVM tests
+    needs: deployment-context
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact selected commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up Java 21
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: pom.xml
+
+      - name: Run full JVM test suite
+        run: ./mvnw -B -ntp clean test
+
+  package-validation:
+    name: Validate deployment package and privacy
+    needs: deployment-context
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out exact selected commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Validate offline AWS deployment package
+        run: ./deploy/aws/scripts/validate-package.sh
+
+      - name: Validate repository privacy and credentials
+        run: ./scripts/ci/validate-repository-privacy.sh
+
+      - name: Validate deployment workflow guardrails
+        run: ./scripts/ci/validate-aws-deploy-workflow.sh
+
+  image-validation:
+    name: Validate production ARM64 image
+    needs: deployment-context
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact selected commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Build exact Linux ARM64 image
+        env:
+          IMAGE_TAG: crowdpass-api:validate-git-${{ github.sha }}
+        run: |
+          docker buildx build \
+            --platform linux/arm64 \
+            --load \
+            --tag "$IMAGE_TAG" \
+            --build-arg APP_VERSION="git-$GITHUB_SHA" \
+            --build-arg VCS_REVISION="$GITHUB_SHA" \
+            .
+
+      - name: Validate production image
+        env:
+          IMAGE_TAG: crowdpass-api:validate-git-${{ github.sha }}
+        run: ./scripts/ci/validate-production-image.sh "$IMAGE_TAG" "$GITHUB_SHA"
+
+  deploy:
+    name: Deploy AWS demo
+    needs:
+      - deployment-context
+      - jvm-validation
+      - package-validation
+      - image-validation
+    environment:
+      name: aws-demo
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    concurrency:
+      group: aws-demo-deploy
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+      ECR_REPOSITORY_NAME: ${{ vars.ECR_REPOSITORY_NAME }}
+      ECR_REPOSITORY_URI: ${{ vars.ECR_REPOSITORY_URI }}
+      ECS_CLUSTER_NAME: ${{ vars.ECS_CLUSTER_NAME }}
+      ECS_SERVICE_NAME: ${{ vars.ECS_SERVICE_NAME }}
+      ECS_TASK_DEFINITION_FAMILY: ${{ vars.ECS_TASK_DEFINITION_FAMILY }}
+      ECS_TASK_EXECUTION_ROLE_ARN: ${{ vars.ECS_TASK_EXECUTION_ROLE_ARN }}
+      ECS_APPLICATION_TASK_ROLE_ARN: ${{ vars.ECS_APPLICATION_TASK_ROLE_ARN }}
+      APPLICATION_CONTAINER_NAME: crowdpass-api
+      IMAGE_TAG: git-${{ github.sha }}
+    steps:
+      - name: Require Phase 12 deployment contract
+        id: contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in \
+            AWS_REGION \
+            AWS_DEPLOY_ROLE_ARN \
+            ECR_REPOSITORY_NAME \
+            ECR_REPOSITORY_URI \
+            ECS_CLUSTER_NAME \
+            ECS_SERVICE_NAME \
+            ECS_TASK_DEFINITION_FAMILY \
+            ECS_TASK_EXECUTION_ROLE_ARN \
+            ECS_APPLICATION_TASK_ROLE_ARN; do
+            if [[ -z "${!name:-}" ]]; then
+              missing+=("$name")
+            fi
+          done
+          if (( ${#missing[@]} > 0 )); then
+            printf 'Phase 12 deployment contract is unavailable; missing aws-demo variables:' >&2
+            printf ' %s' "${missing[@]}" >&2
+            printf '\nNo AWS credentials were requested.\n' >&2
+            exit 1
+          fi
+          [[ "$AWS_REGION" =~ ^[a-z]{2}(-gov)?-[a-z]+-[0-9]+$ ]]
+          [[ "$AWS_DEPLOY_ROLE_ARN" =~ ^arn:aws:iam::([0-9]{12}):role/.+$ ]]
+          account_id=${BASH_REMATCH[1]}
+          [[ "$ECS_TASK_EXECUTION_ROLE_ARN" == "arn:aws:iam::$account_id:role/"* ]]
+          [[ "$ECS_APPLICATION_TASK_ROLE_ARN" == "arn:aws:iam::$account_id:role/"* ]]
+          [[ "$ECR_REPOSITORY_URI" == "$account_id.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY_NAME" ]]
+          echo "aws-account-id=$account_id" >> "$GITHUB_OUTPUT"
+
+      - name: Check out exact validated commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Configure AWS credentials through GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          audience: sts.amazonaws.com
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_DEPLOY_ROLE_ARN }}
+          allowed-account-ids: ${{ steps.contract.outputs.aws-account-id }}
+          role-session-name: crowdpass-${{ github.run_id }}
+          role-duration-seconds: 3600
+          mask-aws-account-id: true
+          unset-current-credentials: true
+
+      - name: Verify Terraform-created deployment target
+        id: target
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws ecr describe-repositories \
+            --repository-names "$ECR_REPOSITORY_NAME" \
+            --output json > "$RUNNER_TEMP/repository.json"
+          jq -e \
+            --arg uri "$ECR_REPOSITORY_URI" \
+            '.repositories | length == 1
+             and .[0].repositoryUri == $uri
+             and .[0].imageTagMutability == "IMMUTABLE"' \
+            "$RUNNER_TEMP/repository.json" >/dev/null
+
+          cluster_status=$(aws ecs describe-clusters \
+            --clusters "$ECS_CLUSTER_NAME" \
+            --query 'clusters[0].status' \
+            --output text)
+          test "$cluster_status" = "ACTIVE"
+
+          aws ecs describe-services \
+            --cluster "$ECS_CLUSTER_NAME" \
+            --services "$ECS_SERVICE_NAME" \
+            --output json > "$RUNNER_TEMP/target-service.json"
+          jq -e \
+            '.failures == []
+             and (.services | length) == 1
+             and .services[0].status == "ACTIVE"
+             and .services[0].desiredCount > 0
+             and .services[0].deploymentConfiguration.deploymentCircuitBreaker.enable == true
+             and .services[0].deploymentConfiguration.deploymentCircuitBreaker.rollback == true' \
+            "$RUNNER_TEMP/target-service.json" >/dev/null
+
+          current_task_definition=$(jq -r '.services[0].taskDefinition' "$RUNNER_TEMP/target-service.json")
+          test -n "$current_task_definition"
+          current_family=$(aws ecs describe-task-definition \
+            --task-definition "$current_task_definition" \
+            --query 'taskDefinition.family' \
+            --output text)
+          test "$current_family" = "$ECS_TASK_DEFINITION_FAMILY"
+          echo "current-task-definition=$current_task_definition" >> "$GITHUB_OUTPUT"
+
+      - name: Authenticate Docker to the existing ECR registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          registry=${ECR_REPOSITORY_URI%%/*}
+          aws ecr get-login-password --region "$AWS_REGION" |
+            docker login --username AWS --password-stdin "$registry"
+
+      - name: Build and validate the exact image that will be pushed
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="$ECR_REPOSITORY_URI:$IMAGE_TAG"
+          docker buildx build \
+            --platform linux/arm64 \
+            --load \
+            --tag "$image" \
+            --build-arg APP_VERSION="$IMAGE_TAG" \
+            --build-arg VCS_REVISION="$GITHUB_SHA" \
+            .
+          ./scripts/ci/validate-production-image.sh "$image" "$GITHUB_SHA"
+
+      - name: Push immutable image and resolve its digest
+        id: image
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="$ECR_REPOSITORY_URI:$IMAGE_TAG"
+          docker push "$image"
+          digest=$(aws ecr describe-images \
+            --repository-name "$ECR_REPOSITORY_NAME" \
+            --image-ids imageTag="$IMAGE_TAG" \
+            --query 'imageDetails[0].imageDigest' \
+            --output text)
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "image-reference=$ECR_REPOSITORY_URI@$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Render next task-definition revision from the live service revision
+        shell: bash
+        env:
+          IMAGE_REFERENCE: ${{ steps.image.outputs.image-reference }}
+          CURRENT_TASK_DEFINITION: ${{ steps.target.outputs.current-task-definition }}
+        run: |
+          set -euo pipefail
+          aws ecs describe-task-definition \
+            --task-definition "$CURRENT_TASK_DEFINITION" \
+            --include TAGS \
+            --output json > "$RUNNER_TEMP/task-definition-response.json"
+          jq '.taskDefinition + {tags: (.tags // [])}' \
+            "$RUNNER_TEMP/task-definition-response.json" \
+            > "$RUNNER_TEMP/current-task-definition.json"
+          ./scripts/cd/render-ecs-task-definition.sh \
+            "$RUNNER_TEMP/current-task-definition.json" \
+            "$RUNNER_TEMP/next-task-definition.json" \
+            "$IMAGE_REFERENCE" \
+            "$ECS_TASK_DEFINITION_FAMILY" \
+            "$ECS_TASK_EXECUTION_ROLE_ARN" \
+            "$ECS_APPLICATION_TASK_ROLE_ARN" \
+            "$APPLICATION_CONTAINER_NAME"
+
+      - name: Register and deploy immutable task-definition revision
+        id: deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          task_definition=$(aws ecs register-task-definition \
+            --cli-input-json "file://$RUNNER_TEMP/next-task-definition.json" \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+          test -n "$task_definition"
+          aws ecs update-service \
+            --cluster "$ECS_CLUSTER_NAME" \
+            --service "$ECS_SERVICE_NAME" \
+            --task-definition "$task_definition" \
+            --query 'service.taskDefinition' \
+            --output text >/dev/null
+          aws ecs wait services-stable \
+            --cluster "$ECS_CLUSTER_NAME" \
+            --services "$ECS_SERVICE_NAME"
+          echo "task-definition=$task_definition" >> "$GITHUB_OUTPUT"
+          echo "revision=${task_definition##*:}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify deployed service and running image digest
+        shell: bash
+        env:
+          EXPECTED_DIGEST: ${{ steps.image.outputs.digest }}
+          EXPECTED_IMAGE_REFERENCE: ${{ steps.image.outputs.image-reference }}
+          EXPECTED_TASK_DEFINITION: ${{ steps.deployment.outputs.task-definition }}
+        run: |
+          set -euo pipefail
+          aws ecs describe-services \
+            --cluster "$ECS_CLUSTER_NAME" \
+            --services "$ECS_SERVICE_NAME" \
+            --output json > "$RUNNER_TEMP/service.json"
+          jq -e \
+            --arg task_definition "$EXPECTED_TASK_DEFINITION" \
+            '.failures == []
+             and (.services | length) == 1
+             and .services[0].taskDefinition == $task_definition
+             and .services[0].runningCount == .services[0].desiredCount
+             and ([.services[0].deployments[] | select(.status == "PRIMARY" and .rolloutState == "COMPLETED")] | length) == 1' \
+            "$RUNNER_TEMP/service.json" >/dev/null
+
+          aws ecs describe-task-definition \
+            --task-definition "$EXPECTED_TASK_DEFINITION" \
+            --output json > "$RUNNER_TEMP/deployed-task-definition.json"
+          jq -e \
+            --arg app "$APPLICATION_CONTAINER_NAME" \
+            --arg image "$EXPECTED_IMAGE_REFERENCE" \
+            '([.taskDefinition.containerDefinitions[] | select(.name == $app and .image == $image)] | length) == 1' \
+            "$RUNNER_TEMP/deployed-task-definition.json" >/dev/null
+
+          aws ecs list-tasks \
+            --cluster "$ECS_CLUSTER_NAME" \
+            --service-name "$ECS_SERVICE_NAME" \
+            --desired-status RUNNING \
+            --output json > "$RUNNER_TEMP/running-tasks.json"
+          jq -e '.taskArns | length > 0' "$RUNNER_TEMP/running-tasks.json" >/dev/null
+          mapfile -t task_arns < <(jq -r '.taskArns[]' "$RUNNER_TEMP/running-tasks.json")
+          aws ecs describe-tasks \
+            --cluster "$ECS_CLUSTER_NAME" \
+            --tasks "${task_arns[@]}" \
+            --output json > "$RUNNER_TEMP/tasks.json"
+          jq -e \
+            --arg app "$APPLICATION_CONTAINER_NAME" \
+            --arg digest "$EXPECTED_DIGEST" \
+            '([.tasks[].containers[] | select(.name == $app)] | length) > 0
+             and ([.tasks[].containers[] | select(.name == $app)] | all(.imageDigest == $digest))' \
+            "$RUNNER_TEMP/tasks.json" >/dev/null
+
+      - name: Report deployment identity
+        env:
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          TASK_REVISION: ${{ steps.deployment.outputs.revision }}
+        run: |
+          {
+            echo "### AWS demo deployment succeeded"
+            echo ""
+            echo "- Git SHA: \`$GITHUB_SHA\`"
+            echo "- Image tag: \`$IMAGE_TAG\`"
+            echo "- Image digest: \`$IMAGE_DIGEST\`"
+            echo "- ECS cluster: \`$ECS_CLUSTER_NAME\`"
+            echo "- ECS service: \`$ECS_SERVICE_NAME\`"
+            echo "- Task-definition revision: \`$TASK_REVISION\`"
+          } >> "$GITHUB_STEP_SUMMARY"
