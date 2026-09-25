@@ -27,6 +27,9 @@ grep -q 'publish_mode="pushed"' "$workflow"
 grep -q -- '--desired-count 1' "$workflow"
 grep -q '.services\[0\].desiredCount == 0 or .services\[0\].desiredCount == 1' "$workflow"
 grep -q '.services\[0\].runningCount == 1' "$workflow"
+grep -q 'for attempt in $(seq 1 60)' "$workflow"
+grep -q 'rolloutState == "FAILED"' "$workflow"
+grep -q 'Timed out waiting for ECS primary deployment rollout completion' "$workflow"
 grep -q '.taskArns | length == 1' "$workflow"
 test "$(grep -c 'docker push "$image"' "$workflow")" -eq 1
 test "$(grep -c './scripts/ci/validate-production-image.sh "$image" "$GITHUB_SHA"' "$workflow")" -eq 2
