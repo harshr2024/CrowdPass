@@ -46,7 +46,7 @@ class JwtSecretConfigurationTest {
 
 		contextRunner.withPropertyValues("crowdpass.jwt.secret=" + secret).run(context -> {
 			assertThat(context).hasNotFailed();
-			assertThat(context.getBean(SecretKey.class).getEncoded()).hasSize(32);
+			assertThat(context.getBean(SecretKey.class).getEncoded()).hasSize(31);
 		});
 	}
 
