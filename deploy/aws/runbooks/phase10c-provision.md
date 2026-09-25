@@ -1,7 +1,8 @@
-# Proposed Phase 10C provisioning order
+# Historical Phase 10C provisioning order
 
-Do not execute this runbook without explicit Phase 10C approval. Every numbered section is a human
-checkpoint; there is intentionally no one-command provisioning script.
+This records the manual process used for the completed Phase 10C deployment. Do not use it to create
+a new CrowdPass environment: `infra/terraform` is now the authoritative infrastructure definition.
+The checkpoints remain useful as historical evidence and as an emergency diagnostic reference.
 
 ## 0. Cost guardrails first
 
