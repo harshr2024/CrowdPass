@@ -36,10 +36,16 @@ resource "aws_ecs_task_definition" "bootstrap" {
 
       linuxParameters = {
         capabilities = {
+          add  = []
           drop = ["ALL"]
         }
         initProcessEnabled = true
       }
+
+      mountPoints    = []
+      portMappings   = []
+      systemControls = []
+      volumesFrom    = []
 
       environment = [
         { name = "DB_URL", value = "jdbc:postgresql://${aws_db_instance.main.address}:5432/${local.database_name}" },
@@ -88,13 +94,20 @@ resource "aws_ecs_task_definition" "bootstrap" {
       readonlyRootFilesystem = false
       privileged             = false
       command                = ["redis-server", "--save", "", "--appendonly", "no", "--dir", "/tmp"]
+      environment            = []
 
       linuxParameters = {
         capabilities = {
+          add  = []
           drop = ["ALL"]
         }
         initProcessEnabled = true
       }
+
+      mountPoints    = []
+      portMappings   = []
+      systemControls = []
+      volumesFrom    = []
 
       healthCheck = {
         command     = ["CMD", "redis-cli", "ping"]
@@ -114,6 +127,8 @@ resource "aws_ecs_task_definition" "bootstrap" {
       }
     }
   ])
+
+  tags = {}
 }
 
 resource "aws_ecs_service" "application" {
