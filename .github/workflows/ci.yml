@@ -112,7 +112,7 @@ jobs:
           terraform -chdir=infra/terraform fmt -check -recursive
           terraform -chdir=infra/terraform validate
 
-      - name: Run plan-only mocked Terraform tests
+      - name: Run plan-only Terraform contract tests
         run: terraform -chdir=infra/terraform test
 
       - name: Validate Terraform architecture invariants
