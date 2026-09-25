@@ -58,10 +58,13 @@ state:
 - `ecs_application_task_role_arn` -> `ECS_APPLICATION_TASK_ROLE_ARN`.
 - `cloudwatch_log_group_name` only if Phase 11D adds log-based deployment verification.
 
-These are non-secret deployment coordinates. Phase 12 or an explicitly approved operator step may
-copy them to Environment variables after infrastructure creation. No database, JWT, rate-limit,
-session, bearer-token, or AWS credential value belongs in GitHub. Runtime secrets remain referenced
-by the ECS task definition and injected from AWS at task startup.
+These are non-secret deployment coordinates. After a successful temporary `terraform apply`, an
+explicit Phase 12/11D synchronization step copies the required outputs into the existing `aws-demo`
+Environment variables. Terraform must not manage the GitHub repository or Environment through a
+GitHub provider merely to populate these values, and Terraform must not receive a GitHub personal
+access token for this purpose. No database, JWT, rate-limit, session, bearer-token, or AWS credential
+value belongs in GitHub. Runtime secrets remain entirely in AWS, referenced by the ECS task
+definition and injected at task startup.
 
 ## Deployment-role permission boundary
 
