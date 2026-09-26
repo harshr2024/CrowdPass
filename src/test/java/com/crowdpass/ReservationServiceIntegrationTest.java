@@ -1,6 +1,9 @@
 package com.crowdpass;
 
 import static org.assertj.core.api.Assertions.assertThat;
+
+import java.util.Set;
+import java.util.stream.Collectors;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Duration;
@@ -23,6 +26,8 @@ import com.crowdpass.reservation.ReservationResponse;
 import com.crowdpass.reservation.ReservationService;
 import com.crowdpass.reservation.ReservationStatus;
 
+import io.micrometer.core.instrument.MeterRegistry;
+
 /** Single-threaded reservation behavior against PostgreSQL, with a controllable clock. */
 @Import({ TestcontainersConfiguration.class, MutableClock.Config.class })
 @SpringBootTest
@@ -41,6 +46,9 @@ class ReservationServiceIntegrationTest {
 
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
+
+	@Autowired
+	private MeterRegistry meterRegistry;
 
 	private ReservationTestData data;
 	private UUID organizer;
@@ -119,10 +127,24 @@ class ReservationServiceIntegrationTest {
 	@Test
 	void fullEventRejectsOtherUsers() {
 		UUID event = publishedEvent(1);
+		double confirmedBefore = reservationMetric("reserve", "confirmed");
+		double fullBefore = reservationMetric("reserve", "event_full");
 		reservationService.reserve(event, data.insertUser("USER"));
 
 		assertCode("EVENT_FULL", () -> reservationService.reserve(event, data.insertUser("USER")));
 		assertState(event, 1, 1, 0);
+		assertThat(reservationMetric("reserve", "confirmed") - confirmedBefore).isEqualTo(1);
+		assertThat(reservationMetric("reserve", "event_full") - fullBefore).isEqualTo(1);
+		assertThat(meterRegistry.find("crowdpass.reservations.operations").meters())
+				.allSatisfy(meter -> assertThat(meter.getId().getTags().stream()
+						.map(tag -> tag.getKey())
+						.collect(Collectors.toSet())).isEqualTo(Set.of("operation", "outcome")));
+	}
+
+	private double reservationMetric(String operation, String outcome) {
+		return meterRegistry.find("crowdpass.reservations.operations")
+				.tags("operation", operation, "outcome", outcome).timers().stream()
+				.mapToDouble(timer -> timer.count()).sum();
 	}
 
 	@Test

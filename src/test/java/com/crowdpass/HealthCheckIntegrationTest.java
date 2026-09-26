@@ -81,6 +81,7 @@ class HealthCheckIntegrationTest {
 		assertThat(get("/actuator/env", null).statusCode()).isEqualTo(401);
 		assertThat(get("/actuator/env", adminToken).statusCode()).isEqualTo(404);
 		assertThat(get("/actuator/beans", adminToken).statusCode()).isEqualTo(404);
+		assertThat(get("/actuator/prometheus", adminToken).statusCode()).isEqualTo(404);
 	}
 
 	private HttpResponse<String> get(String path) throws Exception {

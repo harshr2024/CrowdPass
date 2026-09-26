@@ -15,6 +15,7 @@ import com.crowdpass.event.EventNotFoundException;
 import com.crowdpass.event.EventRepository;
 import com.crowdpass.event.EventStatus;
 import com.crowdpass.event.LockedEvent;
+import com.crowdpass.exception.ApiException;
 import com.crowdpass.reservation.ReservationExceptions.AlreadyReserved;
 import com.crowdpass.reservation.ReservationExceptions.RegistrationClosed;
 import com.crowdpass.reservation.ReservationExceptions.RegistrationNotOpen;
@@ -27,6 +28,8 @@ import com.crowdpass.reservation.waitlist.WaitlistEntryRepository;
 import com.crowdpass.reservation.waitlist.WaitlistStatus;
 import com.crowdpass.user.AuthenticatedUserNotFoundException;
 import com.crowdpass.user.UserRepository;
+
+import io.micrometer.core.instrument.Timer;
 
 /**
  * Joining, leaving, and reading the waitlist. Follows the rules documented on
@@ -47,58 +50,61 @@ public class WaitlistService {
 	private final EventRepository eventRepository;
 	private final UserRepository userRepository;
 	private final Clock clock;
+	private final ReservationMetrics metrics;
 
 	public WaitlistService(WaitlistEntryRepository waitlistEntryRepository,
 			ReservationRepository reservationRepository, EventRepository eventRepository,
-			UserRepository userRepository, Clock clock) {
+			UserRepository userRepository, Clock clock, ReservationMetrics metrics) {
 		this.waitlistEntryRepository = waitlistEntryRepository;
 		this.reservationRepository = reservationRepository;
 		this.eventRepository = eventRepository;
 		this.userRepository = userRepository;
 		this.clock = clock;
+		this.metrics = metrics;
 	}
 
 	/** Joins only a published, currently full event whose registration is open. */
 	@Transactional
 	public WaitlistEntryResponse join(UUID eventId, UUID userId) {
-		Instant now = clock.instant();
-
-		LockedEvent event = eventRepository.lockForSeatChange(eventId).orElseThrow(EventNotFoundException::new);
-		if (!event.isPublished()) {
-			throw new EventNotFoundException();
-		}
-		if (now.isBefore(event.getRegistrationOpenAt())) {
-			throw new RegistrationNotOpen();
-		}
-		if (!now.isBefore(event.getRegistrationCloseAt())) {
-			throw new RegistrationClosed();
-		}
-		if (reservationRepository.existsByEventIdAndUserIdAndStatus(eventId, userId, ReservationStatus.CONFIRMED)) {
-			throw new AlreadyReserved();
-		}
-		if (waitlistEntryRepository.existsByEventIdAndUserIdAndStatus(eventId, userId, WaitlistStatus.WAITING)) {
-			throw new AlreadyWaitlisted();
-		}
-		if (event.getReservedCount() < event.getCapacity()) {
-			throw new SeatAvailable();
-		}
-
-		WaitlistEntry entry = new WaitlistEntry(eventRepository.getReferenceById(eventId),
-				userRepository.getReferenceById(userId), now);
+		Timer.Sample sample = metrics.start();
 		try {
-			waitlistEntryRepository.saveAndFlush(entry);
-		}
-		catch (DataIntegrityViolationException ex) {
-			Optional<String> constraint = DatabaseConstraints.violatedConstraint(ex);
-			if (constraint.filter(WAITING_UNIQUE_INDEX::equals).isPresent()) {
+			Instant now = clock.instant();
+			LockedEvent event = eventRepository.lockForSeatChange(eventId).orElseThrow(EventNotFoundException::new);
+			if (!event.isPublished()) throw new EventNotFoundException();
+			if (now.isBefore(event.getRegistrationOpenAt())) throw new RegistrationNotOpen();
+			if (!now.isBefore(event.getRegistrationCloseAt())) throw new RegistrationClosed();
+			if (reservationRepository.existsByEventIdAndUserIdAndStatus(eventId, userId, ReservationStatus.CONFIRMED)) {
+				throw new AlreadyReserved();
+			}
+			if (waitlistEntryRepository.existsByEventIdAndUserIdAndStatus(eventId, userId, WaitlistStatus.WAITING)) {
 				throw new AlreadyWaitlisted();
 			}
-			if (constraint.filter(WAITLIST_USER_FOREIGN_KEY::equals).isPresent()) {
-				throw new AuthenticatedUserNotFoundException();
+			if (event.getReservedCount() < event.getCapacity()) throw new SeatAvailable();
+
+			WaitlistEntry entry = new WaitlistEntry(eventRepository.getReferenceById(eventId),
+					userRepository.getReferenceById(userId), now);
+			try {
+				waitlistEntryRepository.saveAndFlush(entry);
 			}
+			catch (DataIntegrityViolationException ex) {
+				Optional<String> constraint = DatabaseConstraints.violatedConstraint(ex);
+				if (constraint.filter(WAITING_UNIQUE_INDEX::equals).isPresent()) throw new AlreadyWaitlisted();
+				if (constraint.filter(WAITLIST_USER_FOREIGN_KEY::equals).isPresent()) {
+					throw new AuthenticatedUserNotFoundException();
+				}
+				throw ex;
+			}
+			metrics.waitlistCommitted(sample, "join", "joined");
+			return toResponse(entry, false);
+		}
+		catch (ApiException ex) {
+			metrics.waitlistRejected(sample, "join", ex);
 			throw ex;
 		}
-		return toResponse(entry, false);
+		catch (RuntimeException ex) {
+			metrics.unexpected(sample, "crowdpass.waitlist.operations", "join", ex);
+			throw ex;
+		}
 	}
 
 	/**
@@ -107,20 +113,29 @@ public class WaitlistService {
 	 */
 	@Transactional
 	public WaitlistEntryResponse leave(UUID eventId, UUID userId) {
-		Instant now = clock.instant();
-
-		LockedEvent event = eventRepository.lockForSeatChange(eventId).orElseThrow(WaitlistEntryNotFound::new);
-		int left = waitlistEntryRepository.leaveIfWaiting(eventId, userId, now);
-		WaitlistEntry latest = waitlistEntryRepository.findFirstByEventIdAndUserIdOrderByQueueSeqDesc(eventId, userId)
-				.orElseThrow(WaitlistEntryNotFound::new);
-		if (left == 0 && latest.getStatus() == WaitlistStatus.PROMOTED) {
-			throw new AlreadyPromoted();
+		Timer.Sample sample = metrics.start();
+		try {
+			Instant now = clock.instant();
+			LockedEvent event = eventRepository.lockForSeatChange(eventId).orElseThrow(WaitlistEntryNotFound::new);
+			int left = waitlistEntryRepository.leaveIfWaiting(eventId, userId, now);
+			WaitlistEntry latest = waitlistEntryRepository.findFirstByEventIdAndUserIdOrderByQueueSeqDesc(eventId, userId)
+					.orElseThrow(WaitlistEntryNotFound::new);
+			if (left == 0 && latest.getStatus() == WaitlistStatus.PROMOTED) throw new AlreadyPromoted();
+			if (latest.getStatus() != WaitlistStatus.LEFT) {
+				throw new IllegalStateException("Waitlist entry " + latest.getId() + " is " + latest.getStatus()
+						+ " after leave");
+			}
+			metrics.waitlistCommitted(sample, "leave", left == 1 ? "left" : "already_left");
+			return toResponse(latest, isClosed(event.isPublished(), event.getStartsAt(), now));
 		}
-		if (latest.getStatus() != WaitlistStatus.LEFT) {
-			throw new IllegalStateException("Waitlist entry " + latest.getId() + " is " + latest.getStatus()
-					+ " after leave");
+		catch (ApiException ex) {
+			metrics.waitlistRejected(sample, "leave", ex);
+			throw ex;
 		}
-		return toResponse(latest, isClosed(event.isPublished(), event.getStartsAt(), now));
+		catch (RuntimeException ex) {
+			metrics.unexpected(sample, "crowdpass.waitlist.operations", "leave", ex);
+			throw ex;
+		}
 	}
 
 	/** The caller's latest entry for the event. The position is a snapshot. */
