@@ -33,23 +33,15 @@ export function LoginPage() {
   return (
     <div className="auth-layout page-width">
       <section className="auth-story">
-        <p className="eyebrow">Welcome back</p>
-        <h1>
-          Your next event
-          <br />
-          is waiting.
-        </h1>
-        <p>
-          Return to your reservations, waitlist position, and durable
-          notifications.
-        </p>
+        <p className="eyebrow">Member access</p>
+        <h1>Log in</h1>
+        <p>View your reservations, waitlist position, and notifications.</p>
         <div className="auth-story__signal">
-          <span /> Session tokens stay in this browser tab session.
+          Session ends when this browser tab session closes.
         </div>
       </section>
       <section className="auth-card">
-        <h2>Log in to CrowdPass</h2>
-        <p>Use the account you registered with.</p>
+        <h2>Account details</h2>
         {state?.message ? (
           <div className="inline-notice inline-notice--success">
             {state.message}

@@ -32,31 +32,14 @@ export function RegisterPage() {
   return (
     <div className="auth-layout page-width">
       <section className="auth-story auth-story--register">
-        <p className="eyebrow">Your pass starts here</p>
-        <h1>
-          Fair access,
-          <br />
-          without the scramble.
-        </h1>
+        <p className="eyebrow">CrowdPass membership</p>
+        <h1>Create account</h1>
         <p>
-          Reserve confidently. If an event fills, join a queue that cannot be
-          silently bypassed.
+          Reserve seats, join waitlists, and keep every update in one place.
         </p>
-        <ol className="auth-steps">
-          <li>
-            <span>01</span> Find an event
-          </li>
-          <li>
-            <span>02</span> Reserve or wait
-          </li>
-          <li>
-            <span>03</span> Get promoted fairly
-          </li>
-        </ol>
       </section>
       <section className="auth-card">
-        <h2>Create your account</h2>
-        <p>Simple details. No invented profile data.</p>
+        <h2>Your details</h2>
         <form onSubmit={submit} className="auth-form">
           <FormField
             label="Display name"

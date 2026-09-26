@@ -15,46 +15,17 @@ export function EventsPage() {
   });
 
   return (
-    <>
-      <section className="hero page-width">
-        <div className="hero__glow" aria-hidden="true" />
-        <p className="eyebrow">
-          The seat is yours when the database says it is
-        </p>
-        <h1>
-          Find the room
-          <br />
-          you want to be in.
-        </h1>
-        <p className="hero__copy">
-          Discover upcoming events with fair reservations, a transparent
-          waitlist, and updates that keep pace.
-        </p>
-        <div className="hero__proof" aria-label="CrowdPass principles">
-          <span>
-            <i /> Concurrency-safe seats
-          </span>
-          <span>
-            <i /> Fair FIFO waitlists
-          </span>
-          <span>
-            <i /> Durable notifications
-          </span>
+    <div className="page-width event-index">
+      <header className="event-index__header">
+        <div>
+          <p className="eyebrow">CrowdPass / Calendar</p>
+          <h1 id="upcoming-heading">Upcoming events</h1>
         </div>
-      </section>
-      <section
-        className="page-width events-section"
-        aria-labelledby="upcoming-heading"
-      >
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">Curated calendar</p>
-            <h2 id="upcoming-heading">Upcoming events</h2>
-          </div>
-          {events.data ? (
-            <span>{events.data.totalElements} published</span>
-          ) : null}
-        </div>
+        <p>
+          Reserve a seat. If the room fills, join the line and keep your place.
+        </p>
+      </header>
+      <section aria-labelledby="upcoming-heading">
         {events.isLoading ? <CardSkeleton count={6} /> : null}
         {events.isError ? (
           <ErrorState
@@ -68,11 +39,20 @@ export function EventsPage() {
           </EmptyState>
         ) : null}
         {events.data?.items.length ? (
-          <div className="event-grid">
-            {events.data.items.map((event) => (
-              <EventCard event={event} key={event.id} />
-            ))}
-          </div>
+          <>
+            <EventCard event={events.data.items[0]!} featured />
+            {events.data.items.length > 1 ? (
+              <div className="event-list-heading">
+                <h2>More dates</h2>
+                <span>{events.data.totalElements - 1} upcoming</span>
+              </div>
+            ) : null}
+            <div className="event-list">
+              {events.data.items.slice(1).map((event) => (
+                <EventCard event={event} key={event.id} />
+              ))}
+            </div>
+          </>
         ) : null}
         {events.data && events.data.totalPages > 1 ? (
           <nav className="pagination" aria-label="Event pages">
@@ -96,6 +76,6 @@ export function EventsPage() {
           </nav>
         ) : null}
       </section>
-    </>
+    </div>
   );
 }

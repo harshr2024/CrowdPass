@@ -42,12 +42,9 @@ export function NotificationsPage() {
   return (
     <div className="page-width notifications-page">
       <header className="page-header">
-        <p className="eyebrow">Durable updates</p>
+        <p className="eyebrow">Activity</p>
         <h1>Notifications</h1>
-        <p>
-          Realtime signals bring you back here; PostgreSQL keeps every
-          notification authoritative.
-        </p>
+        <p>Promotion notices and reservation updates, newest first.</p>
       </header>
       {notifications.data?.items.length === 0 ? (
         <EmptyState

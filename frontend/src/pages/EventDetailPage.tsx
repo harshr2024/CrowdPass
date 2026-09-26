@@ -11,7 +11,7 @@ import { useAuth } from "../auth/AuthProvider";
 import { Button } from "../components/Button";
 import { ErrorState, InlineNotice, PageLoader } from "../components/Feedback";
 import { StatusBadge } from "../components/StatusBadge";
-import { formatEventDate, formatEventTime } from "../lib/format";
+import { formatEventCalendarParts, formatEventTime } from "../lib/format";
 
 export function EventDetailPage() {
   const { id = "" } = useParams();
@@ -104,6 +104,7 @@ export function EventDetailPage() {
     renderedAt < new Date(item.registrationOpenAt).getTime();
   const registrationClosed =
     renderedAt >= new Date(item.registrationCloseAt).getTime();
+  const date = formatEventCalendarParts(item.startsAt, item.timeZone);
 
   return (
     <div className="page-width detail-wrap">
@@ -111,156 +112,175 @@ export function EventDetailPage() {
         ← All events
       </Link>
       <section className="event-detail">
-        <div className="event-detail__main">
-          <p className="eyebrow">
-            {formatEventDate(item.startsAt, item.timeZone)}
-          </p>
-          <h1>{item.name}</h1>
-          <p className="event-detail__description">{item.description}</p>
-          <div className="event-facts">
-            <div>
-              <span>Starts</span>
-              <strong>{formatEventTime(item.startsAt, item.timeZone)}</strong>
-            </div>
-            <div>
-              <span>Ends</span>
-              <strong>{formatEventTime(item.endsAt, item.timeZone)}</strong>
-            </div>
-            <div>
-              <span>Timezone</span>
-              <strong>{item.timeZone}</strong>
-            </div>
-            <div>
-              <span>Capacity</span>
-              <strong>
-                {item.capacity} {item.capacity === 1 ? "guest" : "guests"}
-              </strong>
-            </div>
+        <header className="event-detail__header">
+          <div className="event-detail__label">
+            <span>Event</span>
+            <strong>Upcoming</strong>
+          </div>
+          <time className="event-detail__date" dateTime={item.startsAt}>
+            <span>{date.weekday}</span>
+            <strong>{date.day}</strong>
+            <span>
+              {date.month} / {date.year}
+            </span>
+          </time>
+          <div className="event-detail__title">
+            <h1>{item.name}</h1>
+            <p>{item.description}</p>
+          </div>
+        </header>
+        <div className="event-facts">
+          <div>
+            <span>Starts</span>
+            <strong>{formatEventTime(item.startsAt, item.timeZone)}</strong>
+          </div>
+          <div>
+            <span>Ends</span>
+            <strong>{formatEventTime(item.endsAt, item.timeZone)}</strong>
+          </div>
+          <div>
+            <span>Timezone</span>
+            <strong>{item.timeZone}</strong>
+          </div>
+          <div>
+            <span>Capacity</span>
+            <strong>
+              {item.capacity} {item.capacity === 1 ? "guest" : "guests"}
+            </strong>
           </div>
         </div>
-        <aside
-          className="reservation-panel"
-          aria-labelledby="reservation-heading"
-        >
-          <div className="reservation-panel__availability">
-            <span
-              className={`availability-orb ${item.availableSeats === 0 ? "availability-orb--full" : ""}`}
-            />
+        <div className="event-detail__content">
+          <div className="event-detail__about">
+            <span className="section-number">01</span>
             <div>
-              <strong>
-                {item.availableSeats === 0
-                  ? "At capacity"
-                  : `${item.availableSeats} ${item.availableSeats === 1 ? "seat" : "seats"} available`}
-              </strong>
-              <span>
-                {item.availableSeats === 0
-                  ? "The fair waitlist is ready"
-                  : "Availability is a live snapshot"}
-              </span>
+              <h2>About this event</h2>
+              <p>{item.description}</p>
             </div>
           </div>
-          <h2 id="reservation-heading">Your access</h2>
-          {actionMessage ? (
-            <InlineNotice tone={reserve.isError ? "warning" : "success"}>
-              {actionMessage}
-            </InlineNotice>
-          ) : null}
-          {!auth.token ? (
-            <>
-              <p>Log in to reserve a seat or join the waitlist.</p>
-              <Link
-                className="button button--primary button--full"
-                to="/login"
-                state={{ from: `/events/${id}` }}
-              >
-                Log in to continue
-              </Link>
-            </>
-          ) : activeReservation.data ? (
-            <div className="action-state">
-              <StatusBadge status={activeReservation.data.status} />
-              <p>
-                Your seat is confirmed. Cancellation is final, but safe to
-                repeat.
-              </p>
-              <Button
-                variant="danger"
-                pending={cancel.isPending}
-                onClick={() => cancel.mutate()}
-              >
-                Cancel reservation
-              </Button>
-              {cancel.isError ? (
-                <p className="action-error" role="alert">
-                  {messageFor(cancel.error)}
+          <aside
+            className="reservation-panel"
+            aria-labelledby="reservation-heading"
+          >
+            <div className="reservation-panel__availability">
+              <span
+                className={`availability-orb ${item.availableSeats === 0 ? "availability-orb--full" : ""}`}
+              />
+              <div>
+                <strong>
+                  {item.availableSeats === 0
+                    ? "At capacity"
+                    : `${item.availableSeats} ${item.availableSeats === 1 ? "seat" : "seats"} available`}
+                </strong>
+                <span>
+                  {item.availableSeats === 0
+                    ? "The fair waitlist is ready"
+                    : "Availability is a live snapshot"}
+                </span>
+              </div>
+            </div>
+            <h2 id="reservation-heading">Your access</h2>
+            {actionMessage ? (
+              <InlineNotice tone={reserve.isError ? "warning" : "success"}>
+                {actionMessage}
+              </InlineNotice>
+            ) : null}
+            {!auth.token ? (
+              <>
+                <p>Log in to reserve a seat or join the waitlist.</p>
+                <Link
+                  className="button button--primary button--full"
+                  to="/login"
+                  state={{ from: `/events/${id}` }}
+                >
+                  Log in to continue
+                </Link>
+              </>
+            ) : activeReservation.data ? (
+              <div className="action-state">
+                <StatusBadge status={activeReservation.data.status} />
+                <p>
+                  Your seat is confirmed. Cancellation is final, but safe to
+                  repeat.
                 </p>
-              ) : null}
-            </div>
-          ) : waiting ? (
-            <div className="action-state">
-              <StatusBadge status="WAITING" />
-              <p>
-                You are currently <strong>#{waitlist.data?.position}</strong> in
-                the queue. Position is a live snapshot.
-              </p>
-              <Button
-                variant="secondary"
-                pending={leave.isPending}
-                onClick={() => leave.mutate()}
-              >
-                Leave waitlist
-              </Button>
-            </div>
-          ) : promoted ? (
-            <div className="action-state">
-              <StatusBadge status="PROMOTED" />
-              <p>
-                A freed seat was assigned to you. Your reservation and
-                notification are durable.
-              </p>
-              <Link className="arrow-link" to="/account">
-                View reservation →
-              </Link>
-            </div>
-          ) : registrationNotOpen ? (
-            <InlineNotice>Registration has not opened yet.</InlineNotice>
-          ) : registrationClosed ? (
-            <InlineNotice tone="warning">
-              Registration is closed for this event.
-            </InlineNotice>
-          ) : item.availableSeats > 0 ? (
-            <div className="action-state">
-              <p>
-                One click creates one logical reservation—even if the network
-                makes you retry.
-              </p>
-              <Button
-                pending={reserve.isPending}
-                onClick={() => reserve.mutate()}
-              >
-                Reserve seat
-              </Button>
-            </div>
-          ) : (
-            <div className="action-state">
-              <p>
-                Join the FIFO waitlist. If a seat opens, promotion happens in
-                the cancellation transaction.
-              </p>
-              <Button pending={join.isPending} onClick={() => join.mutate()}>
-                Join waitlist
-              </Button>
-              {join.isError ? (
-                <p className="action-error" role="alert">
-                  {messageFor(join.error)}
+                <Button
+                  variant="danger"
+                  pending={cancel.isPending}
+                  onClick={() => cancel.mutate()}
+                >
+                  Cancel reservation
+                </Button>
+                {cancel.isError ? (
+                  <p className="action-error" role="alert">
+                    {messageFor(cancel.error)}
+                  </p>
+                ) : null}
+              </div>
+            ) : waiting ? (
+              <div className="action-state">
+                <StatusBadge status="WAITING" />
+                <p>
+                  You are currently <strong>#{waitlist.data?.position}</strong>{" "}
+                  in the queue. Position is a live snapshot.
                 </p>
-              ) : null}
-            </div>
-          )}
-          <p className="reservation-panel__footnote">
-            Seat state is authoritative in PostgreSQL—not this screen.
-          </p>
-        </aside>
+                <Button
+                  variant="secondary"
+                  pending={leave.isPending}
+                  onClick={() => leave.mutate()}
+                >
+                  Leave waitlist
+                </Button>
+              </div>
+            ) : promoted ? (
+              <div className="action-state">
+                <StatusBadge status="PROMOTED" />
+                <p>
+                  A freed seat was assigned to you. Your reservation and
+                  notification are durable.
+                </p>
+                <Link className="arrow-link" to="/account">
+                  View reservation →
+                </Link>
+              </div>
+            ) : registrationNotOpen ? (
+              <InlineNotice>Registration has not opened yet.</InlineNotice>
+            ) : registrationClosed ? (
+              <InlineNotice tone="warning">
+                Registration is closed for this event.
+              </InlineNotice>
+            ) : item.availableSeats > 0 ? (
+              <div className="action-state">
+                <p>
+                  One click creates one logical reservation—even if the network
+                  makes you retry.
+                </p>
+                <Button
+                  pending={reserve.isPending}
+                  onClick={() => reserve.mutate()}
+                >
+                  Reserve seat
+                </Button>
+              </div>
+            ) : (
+              <div className="action-state">
+                <p>
+                  Join the FIFO waitlist. If a seat opens, promotion happens in
+                  the cancellation transaction.
+                </p>
+                <Button pending={join.isPending} onClick={() => join.mutate()}>
+                  Join waitlist
+                </Button>
+                {join.isError ? (
+                  <p className="action-error" role="alert">
+                    {messageFor(join.error)}
+                  </p>
+                ) : null}
+              </div>
+            )}
+            <p className="reservation-panel__footnote">
+              Availability refreshes after every reservation.
+            </p>
+          </aside>
+        </div>
       </section>
     </div>
   );

@@ -32,6 +32,27 @@ export function formatEventDateParts(
   };
 }
 
+export function formatEventCalendarParts(
+  value: string,
+  timeZone: string,
+): { weekday: string; month: string; day: string; year: string } {
+  const parts = new Intl.DateTimeFormat(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone,
+  }).formatToParts(new Date(value));
+  const read = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  return {
+    weekday: read("weekday"),
+    month: read("month"),
+    day: read("day"),
+    year: read("year"),
+  };
+}
+
 export function formatTimestamp(value: string): string {
   return new Intl.DateTimeFormat(undefined, {
     month: "short",
