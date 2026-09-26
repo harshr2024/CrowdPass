@@ -8,10 +8,16 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 public interface ReservationRepository extends JpaRepository<Reservation, UUID> {
 
 	Optional<Reservation> findByIdAndUserId(UUID id, UUID userId);
+
+	Optional<Reservation> findFirstByEventIdAndUserIdAndStatus(UUID eventId, UUID userId, ReservationStatus status);
+
+	Page<Reservation> findByUserIdOrderByCreatedAtDescIdDesc(UUID userId, Pageable pageable);
 
 	/** Used only to explain a failed reservation; the unique index is the authority. */
 	boolean existsByEventIdAndUserIdAndStatus(UUID eventId, UUID userId, ReservationStatus status);
