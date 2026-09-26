@@ -13,7 +13,7 @@ rm -rf "$PERFORMANCE_DIR/scripts/__pycache__"
 
 CREATED_VALIDATION_FIXTURE=false
 if [ ! -f "$RUNTIME_DIR/fixture.json" ] && [ ! -f "$RUNTIME_DIR/tokens.json" ]; then
-  printf '%s\n' '{"scenario":"validation","eventId":"01960000-0000-7000-8000-000000000010","userCount":1,"capacity":1}' > "$RUNTIME_DIR/fixture.json"
+  printf '%s\n' '{"scenario":"validation","eventId":"01960000-0000-7000-8000-000000000010","warmupEventId":"01960000-0000-7000-8000-000000000099","userCount":1,"capacity":1}' > "$RUNTIME_DIR/fixture.json"
   printf '%s\n' '{"tokens":["validation-only-not-a-jwt"]}' > "$RUNTIME_DIR/tokens.json"
   CREATED_VALIDATION_FIXTURE=true
 fi

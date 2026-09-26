@@ -38,7 +38,11 @@ INSERT INTO events (
     created_at, updated_at
 )
 SELECT
-    CASE WHEN i = 1 THEN :'event_id'::uuid ELSE md5('crowdpass-performance-event-' || :'scenario' || '-' || i)::uuid END,
+    CASE
+        WHEN i = 1 THEN :'event_id'::uuid
+        WHEN i = 2 THEN '01960000-0000-7000-8000-000000000099'::uuid
+        ELSE md5('crowdpass-performance-event-' || :'scenario' || '-' || i)::uuid
+    END,
     '01960000-0000-7000-8000-000000000001',
     'Performance ' || :'scenario' || ' event ' || i,
     'Disposable local performance fixture',
