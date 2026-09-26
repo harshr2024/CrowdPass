@@ -35,6 +35,11 @@ build/
 ### Local environment ###
 .env
 
+### Frontend ###
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+
 ### Terraform local state and generated files ###
 **/.terraform/
 *.tfstate
