@@ -1,0 +1,21 @@
+services:
+  app:
+    environment:
+      # Local performance profile only. Keep Redis in the request path while preventing the
+      # benchmark from measuring the default abuse ceilings instead of reservation behavior.
+      SPRING_APPLICATION_JSON: '{"crowdpass":{"rate-limit":{"policies":{"login-ip":{"requests":1000000},"login-account":{"requests":1000000},"register-ip":{"requests":1000000},"seat-mutation":{"requests":1000000}}}}}'
+      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,metrics
+      LOGGING_LEVEL_ROOT: WARN
+
+  k6:
+    profiles: ["load"]
+    image: grafana/k6:1.3.0@sha256:3ddc8b1a33a2c3d8edc6e99b6a762ae36cba08788463458f5e6a7703e14eb77d
+    volumes:
+      - ./performance/k6:/scripts:ro
+      - ./performance/results:/results
+      - ./performance/.runtime:/runtime:ro
+    environment:
+      BASE_URL: http://app:8080
+    depends_on:
+      app:
+        condition: service_started

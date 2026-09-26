@@ -1,0 +1,6 @@
+raw/
+runtime/
+*.json
+*.csv
+!.gitkeep
+!README.md

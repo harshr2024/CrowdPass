@@ -1,0 +1,4 @@
+services:
+  app:
+    environment:
+      SPRING_APPLICATION_JSON: '{"crowdpass":{"rate-limit":{"policies":{"login-ip":{"requests":1000000},"login-account":{"requests":1000000},"register-ip":{"requests":1000000},"seat-mutation":{"requests":3}}}}}'
