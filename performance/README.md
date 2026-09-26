@@ -82,16 +82,44 @@ instead of being hidden by closed-loop pacing. Run low, moderate, high, and near
 stop before the host becomes unusable. The retry storm intentionally uses closed-loop shared
 iterations because it models a finite simultaneous retry set.
 
-Each run writes a k6 summary and console output to `results/raw/`, plus one-second samples of app
-container CPU/RSS, PostgreSQL active sessions, and Hikari active/pending/max connections to
-`results/runtime/`. These machine-specific raw files are ignored. `summarize.py` emits a sanitized
-compact row suitable for the checked-in results summary.
+For comparable steady-state plateaus, keep one JVM running, perform one deliberate read warmup,
+then run a short unrecorded warmup immediately before each retained level. Reservation warmup uses
+a dedicated sufficient-capacity event so it cannot consume seats from the measured event:
+
+```sh
+# One-time JVM/cache warmup, then a per-level read warmup and 30-second retained plateau.
+RATE=1000 DURATION=60s PRE_ALLOCATED_VUS=1200 MAX_VUS=4000 performance/scripts/warmup.sh
+RATE=2000 DURATION=10s PRE_ALLOCATED_VUS=1200 MAX_VUS=4000 performance/scripts/warmup.sh
+RATE=2000 DURATION=30s PRE_ALLOCATED_VUS=1200 MAX_VUS=4000 \
+  performance/scripts/run-scenario.sh public-reads reads-2000
+
+# Create two events, prepare enough users/tokens, warm the mutation path separately, then measure.
+performance/scripts/prepare-fixture.sh reservations 16000 16000 2
+performance/scripts/prepare-tokens.sh 16000
+RATE=100 DURATION=10s PRE_ALLOCATED_VUS=100 MAX_VUS=1000 \
+  performance/scripts/warmup-reservations.sh
+RATE=500 DURATION=30s PRE_ALLOCATED_VUS=300 MAX_VUS=1200 \
+  performance/scripts/run-scenario.sh reservations reservations-500
+performance/scripts/verify.sh reservations 15001
+```
+
+The same warmed JVM is intentional: these plateaus compare steady-state behavior, not cold starts.
+Reset mutation fixtures between levels, but reuse deterministic-user JWTs generated before timing.
+
+Each run writes a k6 summary and console output to `results/raw/`. It also samples app container
+CPU/RSS; JVM heap, GC and thread metrics; Hikari active/pending/max connections; and PostgreSQL
+sessions, wait categories, ungranted locks and active-transaction age into `results/runtime/`.
+Sampling is deliberately lightweight and may miss sub-second waits. These machine-specific raw
+files are ignored. `summarize.py` emits a sanitized k6 row, while `summarize-runtime.py <run-name>`
+summarizes the two runtime CSVs. `explain-plans.sh` captures safe local `EXPLAIN (ANALYZE, BUFFERS)`
+output for the public list/count and atomic seat update into an ignored file.
 
 ## Scenarios and failure classification
 
 - `public-reads`: alternating public list/detail requests.
 - `reservations`: one sufficient-capacity reservation per distinct user.
-- `hot-event`: excess distinct users compete for limited seats; `EVENT_FULL` is an expected business result.
+- `hot-event`: excess distinct users compete for limited seats; `EVENT_FULL` is an expected business
+  result. Set `ITERATIONS` and `VUS` for an exact finite contention set.
 - `waitlist`: distinct users join an already-full event; PostgreSQL sequence values define FIFO tokens,
   not guaranteed wall-clock arrival order.
 - `idempotency-storm`: same authenticated user, payload, and key concurrently; one logical reservation.

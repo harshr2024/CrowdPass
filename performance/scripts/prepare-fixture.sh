@@ -59,10 +59,11 @@ fi
 jq --null-input \
   --arg scenario "$SCENARIO" \
   --arg eventId "$EVENT_ID" \
+  --arg warmupEventId '01960000-0000-7000-8000-000000000099' \
   --arg password "$PASSWORD" \
   --argjson userCount "$USER_COUNT" \
   --argjson capacity "$CAPACITY" \
-  '{scenario:$scenario,eventId:$eventId,password:$password,userCount:$userCount,capacity:$capacity,emailPattern:"perf-user-%06d@example.invalid"}' \
+  '{scenario:$scenario,eventId:$eventId,warmupEventId:$warmupEventId,password:$password,userCount:$userCount,capacity:$capacity,emailPattern:"perf-user-%06d@example.invalid"}' \
   > "$RUNTIME_DIR/fixture.json"
 chmod 600 "$RUNTIME_DIR/fixture.json"
 rm -f "$REGISTER_FILE"

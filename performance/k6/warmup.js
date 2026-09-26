@@ -9,8 +9,8 @@ export const options = {
       rate: Number(__ENV.RATE || 20),
       timeUnit: '1s',
       duration: __ENV.DURATION || '30s',
-      preAllocatedVUs: 20,
-      maxVUs: 80,
+      preAllocatedVUs: Number(__ENV.PRE_ALLOCATED_VUS || 100),
+      maxVUs: Number(__ENV.MAX_VUS || 1000),
     },
   },
 };

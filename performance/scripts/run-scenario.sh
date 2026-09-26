@@ -14,9 +14,13 @@ fi
 wait_for_readiness
 "$PERFORMANCE_DIR/scripts/sample-runtime.sh" "$RUN_NAME" &
 SAMPLER_PID=$!
+"$PERFORMANCE_DIR/scripts/sample-postgres.sh" "$RUN_NAME" &
+POSTGRES_SAMPLER_PID=$!
 cleanup() {
   kill "$SAMPLER_PID" 2>/dev/null || true
+  kill "$POSTGRES_SAMPLER_PID" 2>/dev/null || true
   wait "$SAMPLER_PID" 2>/dev/null || true
+  wait "$POSTGRES_SAMPLER_PID" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 
@@ -32,5 +36,6 @@ done
 
 cleanup
 trap - EXIT INT TERM
-printf 'Raw summary: %s\nRuntime samples: %s\n' \
-  "$RESULTS_DIR/raw/$RUN_NAME-summary.json" "$RESULTS_DIR/runtime/$RUN_NAME.csv"
+printf 'Raw summary: %s\nRuntime samples: %s\nPostgreSQL samples: %s\n' \
+  "$RESULTS_DIR/raw/$RUN_NAME-summary.json" "$RESULTS_DIR/runtime/$RUN_NAME.csv" \
+  "$RESULTS_DIR/runtime/$RUN_NAME-postgres.csv"
