@@ -4,7 +4,8 @@
 
 ```mermaid
 flowchart LR
-    C[Client] --> API[Spring Boot API]
+    C[React browser client] -->|REST| API[Spring Boot API]
+    API -. authenticated fetch SSE .-> C
     API -->|authoritative transactions| PG[(PostgreSQL\ndurable source of truth)]
     API -. rate-limit decisions .-> R[(Redis\nephemeral)]
     PG --> O[(Transactional outbox)]
@@ -51,5 +52,5 @@ Before splitting services, measure on separated load-generator/server hosts with
 datasets. Likely next steps are database/read-path profiling, horizontally scaled stateless API
 instances, managed Redis for abuse protection/fan-out, independently scaled publisher/consumer
 workers, DLQ alarms, and multi-AZ PostgreSQL. Partitioning events or queues is justified only by
-measured contention/throughput, and must preserve per-event correctness. Payments, a frontend and a
-permanently operated public deployment are intentionally outside the current backend.
+measured contention/throughput, and must preserve per-event correctness. Payments, an organizer
+event-creation UI and a permanently operated public deployment remain intentionally out of scope.
