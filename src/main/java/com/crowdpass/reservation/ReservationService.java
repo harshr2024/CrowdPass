@@ -8,6 +8,7 @@ import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.PageRequest;
 
 import com.crowdpass.common.DatabaseConstraints;
 import com.crowdpass.event.Event;
@@ -15,6 +16,7 @@ import com.crowdpass.event.EventNotFoundException;
 import com.crowdpass.event.EventRepository;
 import com.crowdpass.event.EventStatus;
 import com.crowdpass.event.LockedEvent;
+import com.crowdpass.common.PageResponse;
 import com.crowdpass.exception.ApiException;
 import com.crowdpass.outbox.OutboxWriter;
 import com.crowdpass.reservation.ReservationExceptions.AlreadyReserved;
@@ -165,6 +167,20 @@ public class ReservationService {
 		return reservationRepository.findByIdAndUserId(reservationId, userId)
 				.map(ReservationResponse::from)
 				.orElseThrow(ReservationNotFound::new);
+	}
+
+	@Transactional(readOnly = true)
+	public ReservationResponse getActiveReservation(UUID eventId, UUID userId) {
+		return reservationRepository.findFirstByEventIdAndUserIdAndStatus(eventId, userId,
+				ReservationStatus.CONFIRMED)
+				.map(ReservationResponse::from)
+				.orElseThrow(ReservationNotFound::new);
+	}
+
+	@Transactional(readOnly = true)
+	public PageResponse<ReservationResponse> listReservations(UUID userId, int page, int size) {
+		return PageResponse.from(reservationRepository.findByUserIdOrderByCreatedAtDescIdDesc(userId,
+				PageRequest.of(page, size)).map(ReservationResponse::from));
 	}
 
 	/**

@@ -95,6 +95,45 @@ class ReservationApiIntegrationTest {
 	}
 
 	@Test
+	void listsOnlyCurrentUsersReservationsNewestFirstWithPagination() throws Exception {
+		UUID firstEvent = openEvent(10);
+		UUID secondEvent = openEvent(10);
+		UUID owner = data.insertUser("USER");
+		UUID other = data.insertUser("USER");
+		String first = json(post("/api/events/" + firstEvent + "/reservations", token(owner))).path("id").asString();
+		post("/api/events/" + secondEvent + "/reservations", token(owner));
+		post("/api/events/" + firstEvent + "/reservations", token(other));
+
+		HttpResponse<String> response = get("/api/reservations?page=0&size=1", token(owner));
+
+		assertThat(response.statusCode()).isEqualTo(200);
+		JsonNode body = json(response);
+		assertThat(body.path("totalElements").asLong()).isEqualTo(2);
+		assertThat(body.path("totalPages").asInt()).isEqualTo(2);
+		assertThat(body.path("items")).hasSize(1);
+		assertThat(body.path("items").get(0).path("id").asString()).isNotEqualTo(first);
+	}
+
+	@Test
+	void readsOnlyCurrentUsersActiveReservationForEvent() throws Exception {
+		UUID event = openEvent(10);
+		UUID owner = data.insertUser("USER");
+		UUID other = data.insertUser("USER");
+		String id = json(post("/api/events/" + event + "/reservations", token(owner))).path("id").asString();
+
+		HttpResponse<String> owned = get("/api/events/" + event + "/reservation/me", token(owner));
+		HttpResponse<String> absent = get("/api/events/" + event + "/reservation/me", token(other));
+
+		assertThat(owned.statusCode()).isEqualTo(200);
+		assertThat(json(owned).path("id").asString()).isEqualTo(id);
+		assertError(absent, 404, "RESERVATION_NOT_FOUND");
+
+		post("/api/reservations/" + id + "/cancel", token(owner));
+		assertError(get("/api/events/" + event + "/reservation/me", token(owner)), 404,
+				"RESERVATION_NOT_FOUND");
+	}
+
+	@Test
 	void cancelReturns200AndRepeatedCancelReturnsSameState() throws Exception {
 		UUID event = openEvent(10);
 		UUID user = data.insertUser("USER");
@@ -132,6 +171,8 @@ class ReservationApiIntegrationTest {
 		UUID event = openEvent(10);
 
 		assertThat(post("/api/events/" + event + "/reservations", null).statusCode()).isEqualTo(401);
+		assertThat(get("/api/reservations", null).statusCode()).isEqualTo(401);
+		assertThat(get("/api/events/" + event + "/reservation/me", null).statusCode()).isEqualTo(401);
 		assertThat(get("/api/reservations/" + UUID.randomUUID(), null).statusCode()).isEqualTo(401);
 		assertThat(post("/api/reservations/" + UUID.randomUUID() + "/cancel", null).statusCode()).isEqualTo(401);
 		assertThat(data.state(event).reservedCount()).isZero();
