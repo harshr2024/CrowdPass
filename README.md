@@ -1,77 +1,137 @@
 # CrowdPass
 
-High-concurrency event reservation and virtual queue platform.
+CrowdPass is a high-concurrency event reservation backend built around a deliberately simple rule:
+PostgreSQL—not Redis, a message broker, or an in-memory counter—is authoritative for every seat.
+It combines atomic capacity acquisition, a transactional FIFO waitlist, HTTP idempotency,
+at-least-once notifications, realtime invalidation, and reproducible infrastructure/CI evidence.
 
-> Status: Phase 10 baseline. CrowdPass includes a Spring Boot and PostgreSQL foundation,
-> authentication and authorization, concurrency-safe reservations, transactional FIFO waitlist
-> promotion, Redis distributed rate limiting, a transactional outbox, Standard SQS-compatible
-> asynchronous notifications, idempotent notification consumption, PostgreSQL-backed HTTP request
-> idempotency, SSE notification invalidation through ephemeral Redis Pub/Sub, and a hardened
-> non-root production container with liveness/readiness probes and graceful shutdown. The current
-> baseline has 457 passing tests. Phase 10 deployed and verified this architecture in a temporary,
-> private AWS environment in `us-west-2`, then fully removed the potentially billable
-> infrastructure. The reviewed deployment package and verification record are under `deploy/aws`.
+## What makes it interesting
 
-## Local Setup
+- **No overselling:** conditional PostgreSQL updates and database constraints protect capacity.
+- **Fair cancellation:** every seat-changing transaction locks the event row first; cancellation
+  promotes the oldest waiter synchronously before a new direct reservation can bypass the queue.
+- **Two explicit idempotency boundaries:** HTTP retries replay a stored response, while duplicate SQS
+  deliveries are absorbed by a separate PostgreSQL `source_event_id` constraint.
+- **Durable async work:** the domain change and outbox event commit together; Standard SQS transport
+  is at-least-once and never described as exactly-once.
+- **Safe degradation:** Redis rate limiting fails open and Redis Pub/Sub is ephemeral, while durable
+  correctness and notification recovery remain PostgreSQL-backed.
 
-### Prerequisites
+## Architecture
 
-- JDK 21 (Temurin). If multiple JDKs are installed, point Maven at 21:
-  `export JAVA_HOME=$(/usr/libexec/java_home -v 21)`
-- Docker (Docker Desktop on macOS), used for local infrastructure, the application image, and
-  Testcontainers.
+```mermaid
+flowchart LR
+    Client --> API[Spring Boot API]
+    API -->|authoritative state| PG[(PostgreSQL)]
+    API -. rate limiting .-> Redis[(Redis: ephemeral)]
+    PG --> Outbox[Transactional outbox]
+    Outbox -->|at-least-once| SQS[Standard SQS + DLQ]
+    SQS --> Consumer[Idempotent consumer]
+    Consumer --> PG
+    Consumer -. after commit .-> Redis
+    Redis -. invalidation .-> SSE[SSE]
+    SSE -. refetch hint .-> Client
+```
 
-Maven does not need to be installed; use the wrapper `./mvnw`.
+PostgreSQL owns all durable business state. Redis owns no durable business state. See
+[engineering design](docs/engineering-design.md) for lock ordering and transaction boundaries.
 
-### Run
+## Correctness and reliability
 
-```bash
+Core invariants include `confirmed reservations <= event capacity`, at most one active reservation
+or waiting entry per user/event, no waitlist bypass, committed FIFO sequence order, and synchronous
+promotion in the cancellation transaction. Concurrency tests use real PostgreSQL through
+Testcontainers; constraints and concurrency checks are not replaced by mocks.
+
+The transactional outbox tolerates SQS outages without rolling back successful domain operations.
+Consumer idempotency tolerates redelivery. SSE carries only invalidation; clients refetch durable
+notifications after reconnect. See [failure modes](docs/failure-modes.md).
+
+## Observability
+
+CrowdPass provides request IDs in responses, structured `ApiError`, correlated logs, separate
+`/livez` and PostgreSQL-aware `/readyz`, JVM/Hikari/HTTP metrics, and focused bounded-cardinality
+metrics for reservations, waitlists, idempotency, outbox backlog, notifications, rate-limit
+fail-open and realtime delivery.
+
+The default application exposes only Actuator health/info. An explicit `observability` profile adds
+ADMIN-protected metrics and Prometheus format. The [observability guide](docs/observability.md)
+contains the catalog, investigation workflow, local demo and proposed—not achieved—SLO targets.
+
+## Measured local evidence
+
+These are local Apple M3/Docker measurements with k6 sharing the physical host. They are not AWS or
+production capacity claims.
+
+- 1,000 users competed for 100 seats: exactly 100 confirmed, 900 `EVENT_FULL`, zero oversell.
+- Three independent 1,000-request/200-VU same-key storms each produced one logical reservation.
+- A 30-second local 500 reservation/s plateau completed 15,001 confirmations with p95 3.09 ms and
+  p99 27.41 ms while preserving every database invariant.
+- A 30-second local public-read plateau achieved 4,998.52 req/s with p95 1.68 ms and p99 6.17 ms;
+  CPU was the first pressure signal. Hikari pending remained zero, so the pool stayed 10.
+
+See [Phase 13 results](performance/results/README.md) and the [performance harness](performance/README.md).
+
+## AWS and delivery proof
+
+CrowdPass was temporarily deployed and smoke-tested on AWS, then destroyed. The exercised design
+used an ARM64 non-root image, private encrypted PostgreSQL RDS, ECS/Fargate, immutable ECR images,
+Standard SQS plus DLQ, SSM Parameter Store, CloudWatch Logs and an ephemeral Redis sidecar—with no
+NAT Gateway, ALB, public application ingress or task inbound rules.
+
+GitHub Actions runs JVM/Testcontainers tests, offline deployment/privacy validation, a native ARM64
+image check and Terraform validation. Gated manual CD uses GitHub OIDC, not static AWS credentials.
+Terraform apply/no-op-plan/destroy and survivor audits were exercised. See [`deploy/aws`](deploy/aws/README.md),
+[`infra/terraform`](infra/terraform/README.md), and the [CD contract](deploy/aws/cd-contract.md).
+
+## Technology
+
+Java 21, Spring Boot 4, Spring Security/JWT, Spring Data JPA, PostgreSQL 17, Flyway, Redis, AWS SDK,
+Standard SQS, SSE, Micrometer/Prometheus, Testcontainers, k6, Docker, Terraform and GitHub Actions.
+
+## Run locally
+
+Prerequisites are JDK 21 and Docker. Maven itself is not required.
+
+```sh
 docker compose up -d postgres redis elasticmq
 SPRING_PROFILES_ACTIVE=local ./mvnw spring-boot:run
-curl localhost:8080/actuator/health
+curl http://localhost:8080/livez
+curl http://localhost:8080/readyz
 ```
 
-The `local` profile shows health details (database component, etc.). Without it, health returns only the overall status.
+The `local` profile supplies disposable developer defaults. Production-style configuration requires
+database settings plus separate JWT and rate-limit HMAC secrets. The hardened container runs as
+UID/GID `10001:10001`, with a read-only root filesystem and dropped Linux capabilities:
 
-Configuration comes from environment variables with local defaults:
-
-| Variable      | Default                                     |
-|---------------|---------------------------------------------|
-| `DB_URL`      | `jdbc:postgresql://localhost:5432/crowdpass` |
-| `DB_USERNAME` | `crowdpass`                                 |
-| `DB_PASSWORD` | `crowdpass`                                 |
-
-To change the Compose database credentials or port, copy `.env.example` to `.env`.
-
-### Containerized application
-
-```bash
-docker build -t crowdpass-api:local .
+```sh
 docker compose --profile app up --build
-curl localhost:8080/livez
-curl localhost:8080/readyz
 ```
 
-The `app` profile runs the full stack using the `local-container` Spring profile and Compose DNS
-names. The application container runs as UID/GID `10001:10001` with a read-only root filesystem,
-all Linux capabilities dropped, and only a bounded `/tmp` tmpfs writable. Default application
-configuration remains production-style: database configuration and durable secrets must be supplied
-through the environment.
+## Test and benchmark
 
-### Test
-
-```bash
-./mvnw clean test
+```sh
+./mvnw test
+performance/scripts/validate.sh
 ```
 
-Integration tests start their own disposable PostgreSQL 17 container via Testcontainers; they do not use the Compose database.
+Performance runs must use the documented disposable harness and never target non-benchmark data.
 
-### Reset the local database
+## Security and privacy
 
-```bash
-docker compose down -v   # removes the crowdpass-pgdata volume
-```
+The API is stateless and deny-by-default. Passwords use bcrypt; raw passwords, JWTs, authorization
+headers, idempotency keys, emails and IP addresses are not logged or used as metric labels.
+Rate-limit identities are HMAC-derived, PostgreSQL DETAIL is disabled to avoid row-value leakage,
+runtime secrets come from environment/SSM, and CI scans for credentials, state and generated data.
 
-## Schema Management
+## Intentional limitations
 
-Flyway owns all schema changes (`src/main/resources/db/migration`). Hibernate runs with `ddl-auto=validate` and never modifies the schema.
+- Modular monolith, not independently deployed microservices.
+- No frontend, payment processing, organizer event-creation workflow or permanent public deployment.
+- Fixed-window Redis abuse limits and ephemeral realtime invalidation by design.
+- Local load generator and server share one host; results cannot be extrapolated to production.
+- AWS verification was temporary and the potentially billable infrastructure was destroyed.
+- Proposed SLOs have not been validated by sustained production traffic.
+
+Flyway owns schema changes; Hibernate uses `ddl-auto=validate`. Five migrations currently define the
+schema through PostgreSQL-backed HTTP idempotency.
