@@ -1,9 +1,9 @@
 # CrowdPass
 
-CrowdPass is a high-concurrency event reservation backend built around a deliberately simple rule:
+CrowdPass is a polished event reservation product built around a deliberately simple rule:
 PostgreSQL—not Redis, a message broker, or an in-memory counter—is authoritative for every seat.
-It combines atomic capacity acquisition, a transactional FIFO waitlist, HTTP idempotency,
-at-least-once notifications, realtime invalidation, and reproducible infrastructure/CI evidence.
+Its React experience makes atomic capacity acquisition, a transactional FIFO waitlist, HTTP
+idempotency, durable notifications and realtime invalidation tangible to a user.
 
 ## What makes it interesting
 
@@ -21,7 +21,8 @@ at-least-once notifications, realtime invalidation, and reproducible infrastruct
 
 ```mermaid
 flowchart LR
-    Client --> API[Spring Boot API]
+    Browser[React + TypeScript] -->|REST| API[Spring Boot API]
+    API -. authenticated fetch SSE .-> Browser
     API -->|authoritative state| PG[(PostgreSQL)]
     API -. rate limiting .-> Redis[(Redis: ephemeral)]
     PG --> Outbox[Transactional outbox]
@@ -29,8 +30,8 @@ flowchart LR
     SQS --> Consumer[Idempotent consumer]
     Consumer --> PG
     Consumer -. after commit .-> Redis
-    Redis -. invalidation .-> SSE[SSE]
-    SSE -. refetch hint .-> Client
+    Redis -. invalidation .-> SSE[SSE registry]
+    SSE -. refetch hint .-> Browser
 ```
 
 PostgreSQL owns all durable business state. Redis owns no durable business state. See
@@ -84,10 +85,19 @@ image check and Terraform validation. Gated manual CD uses GitHub OIDC, not stat
 Terraform apply/no-op-plan/destroy and survivor audits were exercised. See [`deploy/aws`](deploy/aws/README.md),
 [`infra/terraform`](infra/terraform/README.md), and the [CD contract](deploy/aws/cd-contract.md).
 
+## Product experience
+
+The responsive browser application supports event discovery, registration/login, reservation and
+cancellation, full-event waitlists, promotion state, account history, durable notifications and
+authenticated fetch-based SSE. TanStack Query refetches authoritative server state after mutations
+and realtime signals. The access token is session-scoped and never enters URLs or logs. See the
+[frontend guide](frontend/README.md) for local setup and the truthful demo-data flow.
+
 ## Technology
 
-Java 21, Spring Boot 4, Spring Security/JWT, Spring Data JPA, PostgreSQL 17, Flyway, Redis, AWS SDK,
-Standard SQS, SSE, Micrometer/Prometheus, Testcontainers, k6, Docker, Terraform and GitHub Actions.
+React 19, TypeScript, Vite, React Router, TanStack Query, Java 21, Spring Boot 4, Spring Security/JWT,
+Spring Data JPA, PostgreSQL 17, Flyway, Redis, AWS SDK, Standard SQS, SSE, Micrometer/Prometheus,
+Testcontainers, Vitest, k6, Docker, Terraform and GitHub Actions.
 
 ## Run locally
 
@@ -99,6 +109,16 @@ SPRING_PROFILES_ACTIVE=local ./mvnw spring-boot:run
 curl http://localhost:8080/livez
 curl http://localhost:8080/readyz
 ```
+
+Then run the browser application:
+
+```sh
+cd frontend
+npm ci
+npm run dev
+```
+
+Vite proxies `/api` to the local backend, so no development CORS exception is required.
 
 The `local` profile supplies disposable developer defaults. Production-style configuration requires
 database settings plus separate JWT and rate-limit HMAC secrets. The hardened container runs as
@@ -112,6 +132,7 @@ docker compose --profile app up --build
 
 ```sh
 ./mvnw test
+cd frontend && npm run validate
 performance/scripts/validate.sh
 ```
 
@@ -127,7 +148,7 @@ runtime secrets come from environment/SSM, and CI scans for credentials, state a
 ## Intentional limitations
 
 - Modular monolith, not independently deployed microservices.
-- No frontend, payment processing, organizer event-creation workflow or permanent public deployment.
+- No payment processing, organizer event-creation UI or permanent public deployment.
 - Fixed-window Redis abuse limits and ephemeral realtime invalidation by design.
 - Local load generator and server share one host; results cannot be extrapolated to production.
 - AWS verification was temporary and the potentially billable infrastructure was destroyed.
