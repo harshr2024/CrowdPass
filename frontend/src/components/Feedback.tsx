@@ -16,9 +16,9 @@ export function PageLoader({
 
 export function CardSkeleton({ count = 3 }: { count?: number }) {
   return (
-    <div className="event-grid" aria-label="Loading events" aria-busy="true">
+    <div className="event-list" aria-label="Loading events" aria-busy="true">
       {Array.from({ length: count }, (_, index) => (
-        <div className="event-card event-card--skeleton" key={index}>
+        <div className="event-entry event-entry--skeleton" key={index}>
           <span className="skeleton skeleton--eyebrow" />
           <span className="skeleton skeleton--title" />
           <span className="skeleton skeleton--text" />
@@ -40,9 +40,6 @@ export function EmptyState({
 }) {
   return (
     <section className="empty-state">
-      <span className="empty-state__icon" aria-hidden="true">
-        ✦
-      </span>
       <h2>{title}</h2>
       <p>{children}</p>
       {action}

@@ -24,10 +24,7 @@ export function AppShell() {
       <header className="site-header">
         <div className="site-header__inner">
           <NavLink to="/events" className="brand" aria-label="CrowdPass events">
-            <span className="brand__mark" aria-hidden="true">
-              C
-            </span>
-            <span>CrowdPass</span>
+            <span aria-hidden="true">Crowd</span>Pass
           </NavLink>
           <nav className="site-nav" aria-label="Main navigation">
             <NavLink to="/events">Events</NavLink>
@@ -59,11 +56,8 @@ export function AppShell() {
                 <NavLink className="text-link" to="/login">
                   Log in
                 </NavLink>
-                <NavLink
-                  className="button button--primary button--compact"
-                  to="/register"
-                >
-                  Join CrowdPass
+                <NavLink className="header-join" to="/register">
+                  Create account
                 </NavLink>
               </>
             )}
@@ -74,8 +68,8 @@ export function AppShell() {
         <Outlet />
       </main>
       <footer className="site-footer">
-        <span>CrowdPass</span>
-        <p>Fair reservations. Durable state. Realtime updates.</p>
+        <span>CrowdPass / Event access</span>
+        <p>Reservations, fair waitlists, and durable updates.</p>
       </footer>
     </div>
   );

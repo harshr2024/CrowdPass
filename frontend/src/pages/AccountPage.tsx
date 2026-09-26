@@ -66,15 +66,16 @@ export function AccountPage() {
     <div className="page-width account-page">
       <header className="account-hero">
         <div>
-          <p className="eyebrow">Your CrowdPass</p>
-          <h1>{auth.user?.displayName ?? "Account"}</h1>
-          <p>{auth.user?.email}</p>
+          <p className="eyebrow">Account</p>
+          <h1>Your reservations</h1>
         </div>
         <div className="account-meta">
-          <span>Member since</span>
-          <strong>
+          <strong>{auth.user?.displayName ?? "CrowdPass member"}</strong>
+          <span>{auth.user?.email}</span>
+          <span>
+            Member since{" "}
             {auth.user ? formatTimestamp(auth.user.createdAt) : "—"}
-          </strong>
+          </span>
         </div>
       </header>
       <section
@@ -83,8 +84,8 @@ export function AccountPage() {
       >
         <div className="section-heading">
           <div>
-            <p className="eyebrow">Your activity</p>
-            <h2 id="reservations-heading">Reservations</h2>
+            <p className="eyebrow">Confirmed and past</p>
+            <h2 id="reservations-heading">Tickets</h2>
           </div>
           <span>{reservations.data?.totalElements ?? 0} total</span>
         </div>
