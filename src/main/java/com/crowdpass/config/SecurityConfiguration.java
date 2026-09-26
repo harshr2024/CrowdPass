@@ -43,6 +43,8 @@ public class SecurityConfiguration {
 						.requestMatchers(HttpMethod.GET, "/livez", "/readyz").permitAll()
 						.requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**", "/actuator/info")
 						.permitAll()
+						.requestMatchers(HttpMethod.GET, "/actuator/metrics", "/actuator/metrics/**",
+								"/actuator/prometheus").hasRole("ADMIN")
 						.requestMatchers("/error").permitAll()
 						.requestMatchers("/api/organizer/**").hasRole("ORGANIZER")
 						.anyRequest().authenticated())

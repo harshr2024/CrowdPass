@@ -29,6 +29,8 @@ import com.crowdpass.reservation.WaitlistEntryResponse;
 import com.crowdpass.reservation.WaitlistService;
 import com.crowdpass.reservation.waitlist.WaitlistStatus;
 
+import io.micrometer.core.instrument.MeterRegistry;
+
 /** Single-threaded waitlist behavior against PostgreSQL, with a controllable clock. */
 @Import({ TestcontainersConfiguration.class, MutableClock.Config.class })
 @SpringBootTest
@@ -51,6 +53,9 @@ class WaitlistServiceIntegrationTest {
 
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
+
+	@Autowired
+	private MeterRegistry meterRegistry;
 
 	private ReservationTestData data;
 	private UUID organizer;
@@ -148,6 +153,7 @@ class WaitlistServiceIntegrationTest {
 
 	@Test
 	void cancellationPromotesHeadWithoutChangingReservedCount() {
+		double promotionsBefore = meterRegistry.counter("crowdpass.waitlist.promotions").count();
 		Full full = fullEvent(1);
 		UUID first = data.insertUser("USER");
 		UUID second = data.insertUser("USER");
@@ -171,6 +177,7 @@ class WaitlistServiceIntegrationTest {
 		EventState state = data.state(full.event());
 		assertThat(state.reservedCount()).isEqualTo(1);
 		assertThat(data.invariantViolations(full.event())).isEmpty();
+		assertThat(meterRegistry.counter("crowdpass.waitlist.promotions").count() - promotionsBefore).isEqualTo(1);
 	}
 
 	@Test

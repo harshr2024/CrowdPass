@@ -1,0 +1,11 @@
+# Explicit opt-in for local/operator metric inspection. SecurityConfiguration still requires an
+# authenticated ADMIN for metrics and Prometheus; the default profile exposes only health and info.
+management:
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus

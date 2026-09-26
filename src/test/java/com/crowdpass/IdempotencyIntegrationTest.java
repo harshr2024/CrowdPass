@@ -53,6 +53,8 @@ import com.crowdpass.idempotency.ReservationRequestFingerprint;
 import com.crowdpass.reservation.ReservationService;
 import com.crowdpass.user.Role;
 
+import io.micrometer.core.instrument.MeterRegistry;
+
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -97,6 +99,9 @@ class IdempotencyIntegrationTest {
 	@Autowired
 	private ReservationRequestFingerprint fingerprint;
 
+	@Autowired
+	private MeterRegistry meterRegistry;
+
 	@MockitoSpyBean
 	private ReservationService reservationService;
 
@@ -129,6 +134,9 @@ class IdempotencyIntegrationTest {
 		UUID event = event(2);
 		UUID user = data.insertUser("USER");
 		String key = key("sequential");
+		double confirmedBefore = meterRegistry.find("crowdpass.reservations.operations")
+				.tags("operation", "reserve", "outcome", "confirmed").timers().stream()
+				.mapToDouble(timer -> timer.count()).sum();
 
 		HttpResponse<String> first = reserve(event, user, key);
 		HttpResponse<String> replay = reserve(event, user, key);
@@ -140,6 +148,10 @@ class IdempotencyIntegrationTest {
 		assertThat(completedCount()).isEqualTo(1);
 		assertThat(rateCount(user)).isEqualTo(1);
 		verify(reservationService, times(1)).reserve(event, user);
+		double confirmedAfter = meterRegistry.find("crowdpass.reservations.operations")
+				.tags("operation", "reserve", "outcome", "confirmed").timers().stream()
+				.mapToDouble(timer -> timer.count()).sum();
+		assertThat(confirmedAfter - confirmedBefore).isEqualTo(1);
 	}
 
 	@Test

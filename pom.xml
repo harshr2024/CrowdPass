@@ -85,6 +85,11 @@
 			<artifactId>postgresql</artifactId>
 			<scope>runtime</scope>
 		</dependency>
+		<dependency>
+			<groupId>io.micrometer</groupId>
+			<artifactId>micrometer-registry-prometheus</artifactId>
+			<scope>runtime</scope>
+		</dependency>
 		<!-- Direct AWS SDK. Spring Cloud AWS is intentionally not a dependency. -->
 		<dependency>
 			<groupId>software.amazon.awssdk</groupId>
