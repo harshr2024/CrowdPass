@@ -1,7 +1,7 @@
 # CrowdPass
 
 CrowdPass is a polished event reservation product built around a deliberately simple rule:
-PostgreSQL—not Redis, a message broker, or an in-memory counter—is authoritative for every seat.
+PostgreSQL not Redis, a message broker, or an in memory counter is authoritative for every seat.
 Its React experience makes atomic capacity acquisition, a transactional FIFO waitlist, HTTP
 idempotency, durable notifications and realtime invalidation tangible to a user.
 
